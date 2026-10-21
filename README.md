@@ -31,19 +31,27 @@ releases de GitHub).
 - Desde el título también podéis elegir **NEW CO-OP GAME** o **CONTINUE CO-OP**
   para empezar o seguir una partida juntos.
 
+## En el móvil (iOS / Android)
+
+| | |
+|---|---|
+| Chat | START → CO-OP (LAN) → **CHAT**; en un combate doble, **SELECT**. Se abre el teclado del teléfono, la tecla de retorno envía y **A** vuelve a sacar el teclado si lo cerraste. |
+| Emotes | START → CO-OP (LAN) → **EMOTE** |
+| IP de ZeroTier | se muestra sola si la app de ZeroTier está conectada (redes con los rangos automáticos de ZeroTier Central) |
+
 ## Qué incluye
 
 | | |
 |---|---|
 | Mundo compartido | ves a tu compañero en tu mapa, con su nombre encima |
-| Chat | tecla **T** (también durante un combate doble) |
+| Chat | tecla **T** (también durante un combate doble); en móvil, ver arriba |
 | Emotes | tecla **Y** |
 | Combates dobles | contra entrenadores, en lockstep, con las reglas de dobles de HeartGold/SoulSilver y una IA rival pensada para dobles |
 | Historia compartida | los eventos que vive uno los vive el otro; las batallas importantes se preguntan antes |
 | Extras | intercambios por el Cable Club, P1 vs P2, objetos para los Pokémon del compañero, ir hasta tu compañero (warp), Concurso de Bichos y Salón de la Fama compartidos, reloj compartido |
 
-Menú co-op (START → CO-OP (LAN) estando conectado): WARP TO PARTNER, ITEM FOR
-PARTNER, STORY SYNC, PARTNER HEALS, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT.
+Menú co-op (START → CO-OP (LAN) estando conectado): CHAT, WARP TO PARTNER, ITEM
+FOR PARTNER, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT.
 
 ## Limitaciones conocidas
 

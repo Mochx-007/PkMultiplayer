@@ -18,6 +18,23 @@ CoopChatBox.__index = CoopChatBox
 CoopChatBox.isChatBox = true
 CoopChatBox.isOpaque = false
 
+-- A phone types on the on-screen keyboard, which only shows while text
+-- input is armed; a desktop has text input on all the time, and other tools
+-- rely on it staying on, so only a phone has it lowered again.
+local function isPhone()
+  local name = love and love.system and love.system.getOS and love.system.getOS()
+  return name == "iOS" or name == "Android"
+end
+CoopChatBox.isPhone = isPhone
+
+local function setKeyboard(on)
+  pcall(function()
+    if love.keyboard and love.keyboard.setTextInput then
+      love.keyboard.setTextInput(on)
+    end
+  end)
+end
+
 local function manager()
   local ok, CoopManager = pcall(require, "src.coop.CoopManager")
   return ok and CoopManager or nil
@@ -49,12 +66,8 @@ function CoopChatBox.new(game)
     swallowOpenKey = true,
   }, CoopChatBox)
 
-  -- Enable mobile/desktop text input event pump
-  pcall(function()
-    if love.keyboard and love.keyboard.setTextInput then
-      love.keyboard.setTextInput(true)
-    end
-  end)
+  -- raises the on-screen keyboard on a phone
+  setKeyboard(true)
 
   return self
 end
@@ -72,11 +85,7 @@ function CoopChatBox:changed()
 end
 
 function CoopChatBox:close()
-  pcall(function()
-    if love.keyboard and love.keyboard.setTextInput then
-      love.keyboard.setTextInput(false)
-    end
-  end)
+  if isPhone() then setKeyboard(false) end
   if self.game and self.game.stack then
     local top = type(self.game.stack.top) == "function" and self.game.stack:top() or self.game.stack.top
     if top == self then self.game.stack:pop() end
@@ -133,6 +142,9 @@ function CoopChatBox:update(dt)
   if input then
     if input:wasPressed("b") and #self.text == 0 then
       self:cancel()
+    elseif input:wasPressed("a") then
+      -- a phone keyboard swiped away comes back on A
+      setKeyboard(true)
     end
   end
 end
@@ -143,7 +155,7 @@ function CoopChatBox:draw()
 
   love.graphics.setColor(0, 0, 0, 1)
   local top = (self.ty + 1) * 8
-  Font.draw("CHAT ENTER/ESC", 8, top)
+  Font.draw(isPhone() and "CHAT  A:KEYBOARD" or "CHAT ENTER/ESC", 8, top)
 
   -- the conversation, newest at the bottom
   local CM = manager()

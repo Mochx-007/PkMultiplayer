@@ -189,6 +189,29 @@ Hooks.modules["src.ui.Menu"] = function(Menu)
   end)
 end
 
+Hooks.modules["src.battle.BattleState"] = function(BattleState)
+  -- SELECT opens the chat in a co-op double, on the FIGHT / PKMN / ITEM /
+  -- RUN menu or while waiting on the partner: the touch layout has no T key.
+  -- (SELECT keeps its own job in the move list, where it reorders moves.)
+  wrap(BattleState, "BattleState", "update", function(update)
+    return function(self, dt, ...)
+      local input = self.coopDouble and self.game and self.game.input
+      if input and input:wasPressed("select") then
+        local CB = package.loaded["src.coop.CoopBattle"]
+        local waiting = CB and CB.waitingForPartner and CB.currentBattle == self
+        if self.phase == "menu" or waiting then
+          local CM = coopManager()
+          if CM and CM.connected and CM.openChat then
+            CM.openChat(self.game)
+            return
+          end
+        end
+      end
+      return update(self, dt, ...)
+    end
+  end)
+end
+
 Hooks.modules["src.battle.TrainerAI"] = function(TrainerAI)
   -- a MEAN LOOK / SPIDER WEB (or a Gen 2 WRAP) holds the foe in as well
   wrap(TrainerAI, "TrainerAI", "switchAction", function(switchAction)

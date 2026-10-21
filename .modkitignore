@@ -2,6 +2,7 @@
 tests/coop_cable_club.lua
 tests/coop_live_chat.lua
 tests/coop_lockstep.lua
+tests/coop_mobile.lua
 tests/coop_partner_items.lua
 tests/coop_switch_rules.lua
 tests/coop_turn_rules.lua

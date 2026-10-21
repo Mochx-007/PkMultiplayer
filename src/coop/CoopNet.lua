@@ -100,7 +100,58 @@ function CoopNet.lanIP()
   return cached("lan", detectLanIP)
 end
 
+-- The address this machine would send from to reach `target`: a UDP socket
+-- "connected" to it sends nothing, but the OS picks the route and the source
+-- address.  Works the same on phones, where there is no shell to ask.
+local function sourceAddressFor(target)
+  local ok, addr = pcall(function()
+    local socket = require("socket")
+    local udp = socket.udp()
+    udp:setpeername(target, 9)
+    local a = udp:getsockname()
+    udp:close()
+    return a
+  end)
+  if ok and type(addr) == "string" and addr ~= "0.0.0.0" then return addr end
+  return nil
+end
+CoopNet.sourceAddressFor = sourceAddressFor
+
+-- The pools ZeroTier Central hands addresses out of ("Auto-Assign from
+-- Range"), as dotted prefixes.  A network on one of these routes it through
+-- the ZeroTier interface (or, on iOS and Android, the ZeroTier VPN), so the
+-- address the OS picks to reach a host inside one is our ZeroTier address.
+CoopNet.ZEROTIER_POOLS = {
+  "10.147.17.", "10.147.18.", "10.147.19.", "10.147.20.",
+  "10.144.", "10.241.", "10.242.", "10.243.", "10.244.",
+  "172.22.", "172.23.", "172.24.", "172.25.", "172.26.",
+  "172.27.", "172.28.", "172.29.", "172.30.",
+  "192.168.191.", "192.168.192.", "192.168.193.",
+  "192.168.194.", "192.168.195.", "192.168.196.",
+}
+
+-- `lanIP` is where the default route leaves from; a pool address that comes
+-- out the same is just a home network that happens to use that range.
+function CoopNet.probeZeroTierIP(probe, lanIP)
+  probe = probe or sourceAddressFor
+  lanIP = lanIP or probe("192.0.2.1")
+  for _, pool in ipairs(CoopNet.ZEROTIER_POOLS) do
+    local target = pool .. (select(2, pool:gsub("%.", "")) == 2 and "0.1" or "1")
+    local addr = probe(target)
+    if addr and addr ~= lanIP and addr:sub(1, #pool) == pool then return addr end
+  end
+  return nil
+end
+
 local function detectZeroTierIP()
+  -- 0. Any platform, phones included: which pool gets its own route
+  local probed = CoopNet.probeZeroTierIP()
+  if probed then return probed end
+
+  -- the shell lookups below find a network on a custom range too, but a
+  -- phone has no shell (io.popen is missing or fails there)
+  if not io.popen then return nil end
+
   -- 1. Linux: ZeroTier interfaces are named zt*
   local ok, ip = pcall(function()
     local handle = io.popen("ip -4 -o addr show 2>/dev/null")

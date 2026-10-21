@@ -92,6 +92,11 @@ end
 function CoopMenu:connectedRows(ow)
   local menu = self
   return {
+    -- the way into the chat on a phone, which has no T key
+    { label = "CHAT  (KEY T)", run = function()
+      menu:close()
+      CoopManager.openChat(menu.game, ow)
+    end },
     { label = warpLabel(), run = function()
       menu:close()
       if ow then CoopManager.warpToPartner(ow) end
@@ -103,7 +108,7 @@ function CoopMenu:connectedRows(ow)
     { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
       CoopManager.setRule("storySync", not CoopManager.storySync)
     end },
-    { label = "PARTNER HEALS " .. onOff(CoopManager.partnerHeals), run = function()
+    { label = "PARTNER HEAL " .. onOff(CoopManager.partnerHeals), run = function()
       CoopManager.setRule("partnerHeals", not CoopManager.partnerHeals)
     end },
     { label = "TRADE", run = function()
@@ -122,7 +127,6 @@ function CoopMenu:connectedRows(ow)
       CoopManager.disconnect()
       menu.index = 1
     end },
-    { label = "RESUME", run = function() menu:close() end },
   }
 end
 
@@ -269,9 +273,12 @@ function CoopMenu:draw()
       for i, row in ipairs(self:connectedRows(findOverworld(self.game))) do rows[i] = row.label end
     end
     Font.drawBox(0, 5, 20, 13)
-    -- tighter rows once linked: the list is longer than the five offline ones
+    -- tighter rows once linked: the list is longer than the five offline ones.
+    -- Nine rows at 9px fill the box exactly, from under its top border (48)
+    -- to the footer (128); B closes the menu, so there is no RESUME row.
+    -- Labels are 16 characters at most: x = 24 to the border at 152.
     local pitch = (#rows > 8) and 9 or ((#rows > 6) and 10 or 12)
-    local top = (#rows > 8) and 46 or 48
+    local top = 48
     for i, r in ipairs(rows) do
       Font.draw(r, 24, top + (i - 1) * pitch)
     end

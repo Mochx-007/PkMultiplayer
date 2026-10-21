@@ -99,6 +99,20 @@ return function(game)
   U.tap(game, "b")
   U.wait(10)
 
+  if not solo then
+    -- the linked co-op menu (its first row is CHAT, the phone's way in)
+    game.stack:push(require("src.coop.CoopMenu").new(game))
+    U.wait(10)
+    U.shot(game, DIR .. "/2b_coop_menu.png")
+    U.tap(game, "a")
+    U.wait(15)
+    local chat = game.stack:top()
+    check(chat and chat.isChatBox, "CHAT in the co-op menu opens the chat box")
+    U.shot(game, DIR .. "/2c_chat.png")
+    U.tap(game, "b")
+    U.wait(10)
+  end
+
   if not solo then U.wait(120) end
   if role == "host" then
     CoopManager.disconnect()
