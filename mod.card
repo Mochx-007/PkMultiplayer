@@ -1,0 +1,31 @@
+-- Sharing metadata, read by the mod manager's detail pane and by tooling;
+-- never by the loader.
+return {
+  summary = "Online co-op for Gold/Silver/Crystal: one Johto, two players, 2-vs-2 trainer battles.",
+  author = "MochiXLi (Mochx-007)",
+  contact = "https://github.com/Mochx-007/PkMultiplayer",
+  tags = { "multiplayer", "co-op", "online", "double-battle", "gen2" },
+  differences = {
+    changed = {
+      "trainer battles can be fought as a co-op double (HeartGold/SoulSilver doubles rules)",
+      "the START menu gains a CO-OP (LAN) row; the title screen NEW CO-OP GAME / CONTINUE CO-OP",
+      "the Hall of Fame, the Bug-Catching Contest and story events are shared with the partner",
+    },
+    added = {
+      "LAN / ZeroTier link (port 7777) with the partner's avatar on your map",
+      "live chat (T) and emotes (Y)",
+      "trades through the Cable Club over the link, P1 vs P2 battles",
+      "items on your partner's Pokemon, warp to partner",
+    },
+    known = {
+      "Gen 1 and Gen 2 games only; on other generations the mod does nothing",
+      "emote bubbles are drawn pills: the cartridge's own bubble sheet is not imported by Gen2Recomped",
+      "both players need the same PkMultiplayer version",
+    },
+  },
+  credits = {
+    { who = "UNDERdecodedHD / Cedric", for_ = "Gen2Recomped, the game this mod runs in" },
+    { who = "bryanthaboi", for_ = "Gen1Recomp, Gen2Recomped's base" },
+  },
+  compat = { engine = ">=0.7.6 <2.0.0", modApi = 2 },
+}

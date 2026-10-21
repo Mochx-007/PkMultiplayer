@@ -1,0 +1,675 @@
+-- src/coop/CoopNet.lua
+-- Network transport for Gen2Recomped Co-op Mode (lua-enet, bundled with LÖVE).
+--
+-- Two channels:
+--   0  reliable + ordered: everything that must arrive (handshake, battle
+--      turns, story flags, chat...).
+--   1  unreliable + sequenced: overworld position snapshots.  A late or lost
+--      snapshot is simply superseded by the next one, so it never stalls the
+--      reliable stream behind it (head-of-line blocking was what made the
+--      partner freeze and then teleport).
+--
+-- States:
+--   DISCONNECTED  nothing open
+--   LISTENING     host socket open, no partner yet (host goes back here when
+--                 a partner leaves or a reconnect window expires)
+--   CONNECTING    guest dialing the host
+--   HANDSHAKE     enet link up, waiting for the coop_hello exchange
+--   SYNCED        handshake done (set by CoopManager via markSynced)
+--   RECONNECTING  link dropped mid-session; guest re-dials, host waits
+
+local Json = require("src.link.Json")
+local CoopLog = require("src.coop.CoopLog")
+
+local hasEnet, enet = pcall(require, "enet")
+if not hasEnet then enet = nil end
+
+local CoopNet = {}
+CoopNet.__index = CoopNet
+
+CoopNet.DEFAULT_PORT = 7777
+-- 3: foes roll their target from the shared RNG and story scenes send the
+-- whole state diff -- a v2 copy would resolve the same turn differently
+-- 7: story events count for the partner on any map and wait out a dropped
+-- link -- a v6 copy would drop every event from another map
+CoopNet.PROTOCOL = 7
+CoopNet.CHANNELS = 2
+CoopNet.CH_RELIABLE = 0
+CoopNet.CH_FAST = 1
+
+CoopNet.STATE = {
+  DISCONNECTED = "DISCONNECTED",
+  LISTENING    = "LISTENING",
+  CONNECTING   = "CONNECTING",
+  HANDSHAKE    = "HANDSHAKE",
+  SYNCED       = "SYNCED",
+  RECONNECTING = "RECONNECTING",
+}
+
+CoopNet.PING_INTERVAL   = 1.0   -- keepalive / RTT probe
+CoopNet.STALL_TIMEOUT   = 4.0   -- no packet for this long: link flagged weak
+CoopNet.CONNECT_TIMEOUT = 12.0  -- guest gives up dialing a host that never answers
+CoopNet.RECONNECT_RETRY = 2.0   -- guest re-dial cadence while RECONNECTING
+CoopNet.RECONNECT_MAX   = 60.0  -- reconnect window before the session is dropped
+CoopNet.OUTBOX_MAX      = 128   -- reliable messages kept while the link is down
+
+local function now()
+  return (love and love.timer and love.timer.getTime and love.timer.getTime()) or os.clock()
+end
+
+function CoopNet.available()
+  return enet ~= nil
+end
+
+-- ---------------------------------------------------------------------
+-- Address discovery.  These shell out (`ip`, `ipconfig`) or open sockets,
+-- so they are cached: the lobby and menu draw them every frame, and a
+-- popen per frame froze the game for tens of milliseconds at a time.
+-- ---------------------------------------------------------------------
+
+local IP_CACHE_TTL = 15.0
+local ipCache = {}
+
+local function cached(key, fn)
+  local entry = ipCache[key]
+  local t = now()
+  if entry and (t - entry.at) < IP_CACHE_TTL then return entry.value end
+  local value = fn()
+  ipCache[key] = { value = value, at = t }
+  return value
+end
+
+function CoopNet.clearAddressCache()
+  ipCache = {}
+end
+
+local function detectLanIP()
+  local ok, ip = pcall(function()
+    local socket = require("socket")
+    local udp = socket.udp()
+    udp:setpeername("192.0.2.1", 9)
+    local addr = udp:getsockname()
+    udp:close()
+    return addr
+  end)
+  if ok and ip and ip ~= "0.0.0.0" then return ip end
+  return "127.0.0.1"
+end
+
+function CoopNet.lanIP()
+  return cached("lan", detectLanIP)
+end
+
+local function detectZeroTierIP()
+  -- 1. Linux: ZeroTier interfaces are named zt*
+  local ok, ip = pcall(function()
+    local handle = io.popen("ip -4 -o addr show 2>/dev/null")
+    if not handle then return nil end
+    for line in handle:lines() do
+      local iface, addr = line:match("%d+:%s+([%w_%.%-]+)%s+inet%s+(%d+%.%d+%.%d+%.%d+)")
+      if iface and (iface:find("^zt") or iface:lower():find("zerotier")) then
+        handle:close()
+        return addr
+      end
+    end
+    handle:close()
+    return nil
+  end)
+  if ok and ip and #ip > 6 then return ip end
+
+  -- 2. Windows: the adapter section is titled "... ZeroTier One [xxxx]"
+  if package.config:sub(1, 1) == "\\" then
+    local ok2, ip2 = pcall(function()
+      local handle = io.popen("ipconfig 2>nul")
+      if not handle then return nil end
+      local inZT = false
+      for line in handle:lines() do
+        local low = line:lower()
+        if not line:match("^%s") and line:match("%S") then
+          -- a new adapter header (unindented line)
+          inZT = low:find("zerotier") ~= nil
+        elseif inZT and (low:find("ipv4") or low:find("direcci")) then
+          local addr = line:match("(%d+%.%d+%.%d+%.%d+)")
+          if addr and not addr:find("^127%.") and not addr:find("^169%.254%.") then
+            handle:close()
+            return addr
+          end
+        end
+      end
+      handle:close()
+      return nil
+    end)
+    if ok2 and ip2 and #ip2 > 6 then return ip2 end
+  end
+  return nil
+end
+
+function CoopNet.zeroTierIP()
+  return cached("zt", detectZeroTierIP) or nil
+end
+
+-- Best IP address to display or prefill (ZeroTier prioritized if present)
+function CoopNet.bestIP()
+  local zt = CoopNet.zeroTierIP()
+  if zt then return zt, true end
+  return CoopNet.lanIP(), false
+end
+
+-- Detect system country code or locale
+function CoopNet.detectCountry()
+  local ok, country = pcall(function()
+    for _, var in ipairs({ "LC_ALL", "LC_MESSAGES", "LANG", "LC_TIME" }) do
+      local val = os.getenv(var)
+      if val and #val > 0 then
+        local c = val:match("^[a-zA-Z]+_([A-Z][A-Z])")
+        if c then return c end
+      end
+    end
+    return "US"
+  end)
+  if ok and country then return country end
+  return "US"
+end
+
+-- Detect system timezone offset and current formatted time
+function CoopNet.detectTimezone()
+  local ok, tzInfo = pcall(function()
+    local t = os.time()
+    local localDate = os.date("*t", t)
+    local utcDate = os.date("!*t", t)
+    -- os.time() reads a table as LOCAL time, so DST must be carried over or
+    -- the difference is an hour off half the year
+    utcDate.isdst = localDate.isdst
+    local diff = os.difftime(os.time(localDate), os.time(utcDate))
+    local sign = (diff >= 0) and "+" or "-"
+    local abs = math.abs(diff)
+    local hours = math.floor(abs / 3600)
+    local mins = math.floor((abs % 3600) / 60)
+    return {
+      offsetSec = diff,
+      label = string.format("UTC%s%d:%02d", sign, hours, mins),
+      timeStr = os.date("%H:%M", t),
+      hours = (diff >= 0) and hours or -hours,
+      mins = mins,
+    }
+  end)
+  if ok and tzInfo then return tzInfo end
+  return { offsetSec = 0, label = "UTC+0:00", timeStr = "12:00", hours = 0, mins = 0 }
+end
+
+-- ---------------------------------------------------------------------
+-- Wire encoding.  Messages carry game tables (moves, Pokemon) that may
+-- hold functions, userdata or back-references; Json.encode raises on the
+-- first of those, and an error inside send() used to vanish into the
+-- caller's pcall with the message never sent.  wire() makes a plain,
+-- acyclic copy that always encodes.
+-- ---------------------------------------------------------------------
+
+local function wireCopy(v, depth, seen)
+  local t = type(v)
+  if t == "number" then
+    if v ~= v or v == math.huge or v == -math.huge then return 0 end
+    return v
+  end
+  if t == "string" or t == "boolean" then return v end
+  if t ~= "table" then return nil end
+  if depth > 10 or seen[v] then return nil end
+  seen[v] = true
+  local out = {}
+  local n = #v
+  if n > 0 then
+    for i = 1, n do out[i] = wireCopy(v[i], depth + 1, seen) end
+    -- keep arrays dense; nil holes would turn them into objects
+    for i = 1, n do if out[i] == nil then out[i] = false end end
+  else
+    for k, val in pairs(v) do
+      local kt = type(k)
+      if kt == "string" or kt == "number" then
+        local c = wireCopy(val, depth + 1, seen)
+        if c ~= nil then out[tostring(k)] = c end
+      end
+    end
+  end
+  seen[v] = nil
+  return out
+end
+
+function CoopNet.wire(v)
+  return wireCopy(v, 0, {})
+end
+
+function CoopNet.encode(msg)
+  local ok, text = pcall(Json.encode, wireCopy(msg, 0, {}))
+  if ok then return text end
+  CoopLog.error("NET", "encode failed for " .. tostring(msg and msg.type) .. ": " .. tostring(text))
+  return nil
+end
+
+-- ---------------------------------------------------------------------
+
+function CoopNet.new()
+  local self = setmetatable({
+    enetHost = nil,
+    peer = nil,
+    state = CoopNet.STATE.DISCONNECTED,
+    isHost = false,
+    address = nil,
+    port = CoopNet.DEFAULT_PORT,
+    inbox = {},
+    outbox = {},
+    error = nil,
+    closed = true,
+    paired = false,
+    sessionActive = false,  -- a handshake has completed at least once
+
+    sendSeq = 0,
+    lastRecvSeq = 0,
+
+    pingTimer = 0,
+    rttMs = 0,
+    lastHeartbeat = 0,
+    stalled = false,
+    reconnectTimer = 0,
+    reconnectRetryTimer = 0,
+    connectTimer = 0,
+
+    country = CoopNet.detectCountry(),
+    timezone = CoopNet.detectTimezone(),
+  }, CoopNet)
+  return self
+end
+
+function CoopNet:setState(newState, reason)
+  if self.state ~= newState then
+    CoopLog.sync("STATE_CHANGE", string.format("%s -> %s (%s)", self.state, newState, reason or "normal"))
+    self.state = newState
+    table.insert(self.inbox, { type = "net_state_change", state = newState, reason = reason })
+  end
+end
+
+-- CoopManager calls this once both hellos have crossed
+function CoopNet:markSynced()
+  self.sessionActive = true
+  self.reconnectTimer = 0
+  self:setState(CoopNet.STATE.SYNCED, "Handshake completed")
+end
+
+function CoopNet:isLinked()
+  return not self.closed and self.paired and self.peer ~= nil
+end
+
+local function configurePeer(peer)
+  if peer and peer.timeout then
+    -- limit, minimum, maximum (ms): give up on a silent peer within ~10s so
+    -- the reconnect loop can take over instead of waiting a full minute
+    pcall(peer.timeout, peer, 32, 3000, 10000)
+  end
+  if peer and peer.ping_interval then pcall(peer.ping_interval, peer, 500) end
+end
+
+function CoopNet:host(port)
+  port = port or CoopNet.DEFAULT_PORT
+  if not enet then
+    self.error = "Co-op needs lua-enet (bundled with LÖVE)"
+    CoopLog.error("NET", self.error)
+    return false
+  end
+  self:close()
+  self.inbox = {}
+
+  local ok, h, err = pcall(enet.host_create, ("*:%d"):format(port), 4, CoopNet.CHANNELS)
+  if not ok or not h then
+    self.error = "PORT " .. port .. " IN USE"
+    CoopLog.error("NET", tostring(err or h or ("Failed to bind port " .. port)))
+    return false
+  end
+
+  self.enetHost = h
+  self.isHost = true
+  self.closed = false
+  self.paired = false
+  self.sessionActive = false
+  self.error = nil
+  self.port = port
+  self.sendSeq = 0
+  self.lastRecvSeq = 0
+  self.address = ("%s:%d"):format(CoopNet.lanIP(), port)
+
+  self:setState(CoopNet.STATE.LISTENING, "Server started on " .. self.address)
+  CoopLog.info("NET", "Hosting on " .. self.address)
+  return true
+end
+
+function CoopNet:dial()
+  if not self.enetHost or not self.address then return false end
+  local ok, peer = pcall(self.enetHost.connect, self.enetHost, self.address, CoopNet.CHANNELS)
+  if ok and peer then
+    self.peer = peer
+    configurePeer(peer)
+    return true
+  end
+  return false
+end
+
+function CoopNet:join(host, port)
+  port = port or CoopNet.DEFAULT_PORT
+  if not enet then
+    self.error = "Co-op needs lua-enet (bundled with LÖVE)"
+    CoopLog.error("NET", self.error)
+    return false
+  end
+  self:close()
+  self.inbox = {}
+
+  local ok, h, err = pcall(enet.host_create, nil, 1, CoopNet.CHANNELS)
+  if not ok or not h then
+    self.error = "NETWORK UNAVAILABLE"
+    CoopLog.error("NET", tostring(err or h or "Failed to create client socket"))
+    return false
+  end
+
+  self.enetHost = h
+  self.isHost = false
+  self.closed = false
+  self.paired = false
+  self.sessionActive = false
+  self.error = nil
+  self.port = port
+  self.sendSeq = 0
+  self.lastRecvSeq = 0
+  self.connectTimer = 0
+
+  self.address = host:find(":") and host or ("%s:%d"):format(host, port)
+
+  if not self:dial() then
+    self:close()
+    self.error = "BAD ADDRESS"
+    CoopLog.error("NET", "Failed to initiate connect to " .. tostring(self.address))
+    return false
+  end
+
+  self:setState(CoopNet.STATE.CONNECTING, "Connecting to " .. self.address)
+  CoopLog.info("NET", "Connecting to " .. self.address)
+  return true
+end
+
+local QUIET_TYPES = { coop_pos = true }
+
+local function rawSend(peer, text, channel, flag)
+  if not peer then return false end
+  local ok = pcall(peer.send, peer, text, channel, flag)
+  return ok
+end
+
+-- send(msg)                -> reliable, queued while the link is down
+-- send(msg, { fast = true }) -> unreliable sequenced, dropped while down
+function CoopNet:send(msg, opts)
+  if not msg or self.closed then return false end
+  local fast = opts and opts.fast
+
+  if not fast then
+    self.sendSeq = self.sendSeq + 1
+    msg.seq = self.sendSeq
+  end
+
+  local text = CoopNet.encode(msg)
+  if not text then return false end
+
+  local linked = self.peer and self.paired
+                 and (self.state == CoopNet.STATE.SYNCED or self.state == CoopNet.STATE.HANDSHAKE)
+  if fast then
+    if not linked then return false end
+    rawSend(self.peer, text, CoopNet.CH_FAST, "unreliable")
+    return true
+  end
+
+  if linked then
+    rawSend(self.peer, text, CoopNet.CH_RELIABLE, "reliable")
+    if not QUIET_TYPES[msg.type] then CoopLog.net("-> SEND", msg.type, msg) end
+  else
+    if #self.outbox >= CoopNet.OUTBOX_MAX then table.remove(self.outbox, 1) end
+    table.insert(self.outbox, text)
+    CoopLog.net(".. QUEUE", msg.type, msg)
+  end
+  return true
+end
+
+function CoopNet:sendPing()
+  if not self.peer then return end
+  local text = Json.encode({ type = "coop_ping", t = now() })
+  rawSend(self.peer, text, CoopNet.CH_RELIABLE, "unsequenced")
+end
+
+function CoopNet:sendPong(t)
+  if not self.peer then return end
+  local text = Json.encode({ type = "coop_pong", t = t })
+  rawSend(self.peer, text, CoopNet.CH_RELIABLE, "unsequenced")
+end
+
+-- 0..3 signal bars for the HUD
+function CoopNet:linkQuality()
+  if not self:isLinked() then return 0 end
+  if self.stalled then return 1 end
+  local rtt = self.rttMs or 0
+  if rtt <= 90 then return 3 end
+  if rtt <= 220 then return 2 end
+  return 1
+end
+
+function CoopNet:onPeerConnected(peer, t)
+  -- A HOST ONLY EVER HAS ONE PARTNER.  A second machine dialing in while the
+  -- partner is alive is turned away; one dialing in after the partner went
+  -- silent is the partner coming back on a new connection, and replaces it.
+  if self.isHost and self.peer and self.peer ~= peer and self.paired
+     and (t - self.lastHeartbeat) < CoopNet.STALL_TIMEOUT then
+    CoopLog.warn("NET", "Rejected extra connection: a partner is already linked")
+    pcall(peer.disconnect_now, peer, 1)
+    return
+  end
+  if self.peer and self.peer ~= peer then
+    pcall(self.peer.reset, self.peer)
+  end
+
+  self.peer = peer
+  configurePeer(peer)
+  self.paired = true
+  self.stalled = false
+  self.lastHeartbeat = t
+  self.reconnectTimer = 0
+  self.connectTimer = 0
+  self.error = nil
+  CoopLog.info("NET", "Link established with peer")
+
+  for _, queued in ipairs(self.outbox) do
+    rawSend(peer, queued, CoopNet.CH_RELIABLE, "reliable")
+  end
+  self.outbox = {}
+
+  self:setState(CoopNet.STATE.HANDSHAKE, "Peer connected; starting handshake")
+  table.insert(self.inbox, { type = "net_connect", reconnect = self.sessionActive })
+end
+
+function CoopNet:onPeerDisconnected(peer, data)
+  if peer ~= self.peer then
+    -- a late disconnect for a connection that was already replaced (the old
+    -- link of a partner who has since reconnected) must not drop the new one
+    CoopLog.info("NET", "Ignoring disconnect of a stale peer")
+    return
+  end
+  self.paired = false
+  self.peer = nil
+  self.stalled = false
+  local intentional = (tonumber(data) or 0) == 2 or self.byeReceived
+
+  if self.state == CoopNet.STATE.CONNECTING and not self.sessionActive then
+    self.error = "HOST NOT FOUND"
+    CoopLog.warn("NET", "Could not reach host " .. tostring(self.address))
+    self:close()
+    table.insert(self.inbox, { type = "net_disconnect", reason = "unreachable" })
+    return
+  end
+
+  if intentional then
+    CoopLog.info("NET", "Partner left the session")
+    self.sessionActive = false
+    self.byeReceived = false
+    if self.isHost then
+      self:setState(CoopNet.STATE.LISTENING, "Partner left; waiting for a new partner")
+    else
+      self:close()
+    end
+    table.insert(self.inbox, { type = "net_disconnect", reason = "left" })
+    return
+  end
+
+  CoopLog.warn("NET", "Link lost; entering reconnect window")
+  self.reconnectTimer = 0
+  self.reconnectRetryTimer = CoopNet.RECONNECT_RETRY -- guest re-dials at once
+  self:setState(CoopNet.STATE.RECONNECTING, "Link lost")
+  table.insert(self.inbox, { type = "net_disconnect", reason = "lost" })
+end
+
+function CoopNet:update(dt)
+  if not self.enetHost or self.closed then return end
+  dt = dt or 0.016
+  local t = now()
+
+  -- 1. enet events
+  for _ = 1, 256 do
+    local ok, event = pcall(self.enetHost.service, self.enetHost, 0)
+    if not ok or not event then break end
+
+    if event.type == "connect" then
+      self:onPeerConnected(event.peer, t)
+
+    elseif event.type == "disconnect" then
+      self:onPeerDisconnected(event.peer, event.data)
+      if self.closed then return end
+
+    elseif event.type == "receive" and event.peer == self.peer then
+      self.lastHeartbeat = t
+      self.stalled = false
+      local okJson, msg = pcall(Json.decode, event.data)
+      if okJson and type(msg) == "table" then
+        if msg.type == "coop_ping" then
+          self:sendPong(msg.t)
+        elseif msg.type == "coop_pong" then
+          if tonumber(msg.t) then
+            self.rttMs = math.max(0, math.floor((t - msg.t) * 1000 + 0.5))
+          end
+        else
+          if msg.seq then self.lastRecvSeq = msg.seq end
+          if msg.type == "coop_bye" then self.byeReceived = true end
+          if not QUIET_TYPES[msg.type] then CoopLog.net("<- RECV", msg.type, msg) end
+          table.insert(self.inbox, msg)
+        end
+      else
+        CoopLog.warn("NET", "Dropped undecodable packet")
+      end
+    end
+  end
+
+  -- 2. keepalive + stall detection on a live link
+  if self.paired and self.peer then
+    self.pingTimer = self.pingTimer + dt
+    if self.pingTimer >= CoopNet.PING_INTERVAL then
+      self.pingTimer = 0
+      self:sendPing()
+    end
+    local quiet = t - self.lastHeartbeat
+    if quiet > CoopNet.STALL_TIMEOUT and not self.stalled then
+      self.stalled = true
+      CoopLog.warn("NET", string.format("Link stalled (%.1fs without packets)", quiet))
+      table.insert(self.inbox, { type = "net_stalled" })
+    end
+  end
+
+  -- 3. guest dialing a host that never answers
+  if self.state == CoopNet.STATE.CONNECTING and not self.paired then
+    self.connectTimer = self.connectTimer + dt
+    if self.connectTimer >= CoopNet.CONNECT_TIMEOUT then
+      self.error = "HOST NOT FOUND"
+      CoopLog.warn("NET", "Connect timed out for " .. tostring(self.address))
+      self:close()
+      table.insert(self.inbox, { type = "net_disconnect", reason = "unreachable" })
+      return
+    end
+  end
+
+  -- 4. reconnect window
+  if self.state == CoopNet.STATE.RECONNECTING then
+    if not self.isHost then
+      self.reconnectRetryTimer = self.reconnectRetryTimer + dt
+      if self.reconnectRetryTimer >= CoopNet.RECONNECT_RETRY and not self.paired then
+        self.reconnectRetryTimer = 0
+        if self.peer then pcall(self.peer.reset, self.peer) end
+        self.peer = nil
+        self:dial()
+      end
+    end
+    self.reconnectTimer = self.reconnectTimer + dt
+    if self.reconnectTimer >= CoopNet.RECONNECT_MAX then
+      CoopLog.error("NET", "Reconnect window expired; dropping the session")
+      self.sessionActive = false
+      if self.isHost then
+        if self.peer then pcall(self.peer.reset, self.peer) end
+        self.peer = nil
+        self.outbox = {}
+        self:setState(CoopNet.STATE.LISTENING, "Reconnect window expired; waiting for a partner")
+        table.insert(self.inbox, { type = "net_disconnect", reason = "timeout" })
+      else
+        self.error = "LINK LOST"
+        self:close()
+        table.insert(self.inbox, { type = "net_disconnect", reason = "timeout" })
+      end
+    end
+  end
+end
+
+function CoopNet:poll()
+  local msgs = self.inbox
+  self.inbox = {}
+  return msgs
+end
+
+function CoopNet:flush()
+  if self.enetHost then
+    pcall(self.enetHost.flush, self.enetHost)
+  end
+end
+
+-- Leave politely: the disconnect (with code 2 = "left on purpose") is given
+-- a moment to reach the partner, so they see "partner left" at once instead
+-- of sitting in a reconnect window until their timeout fires.
+function CoopNet:shutdown()
+  if self.peer and self.enetHost then
+    pcall(self.peer.disconnect_later, self.peer, 2)
+    for _ = 1, 10 do
+      local ok, event = pcall(self.enetHost.service, self.enetHost, 15)
+      if not ok then break end
+      if event and event.type == "disconnect" then break end
+    end
+  end
+  self:close()
+end
+
+function CoopNet:close()
+  if self.peer then
+    pcall(self.peer.disconnect_now, self.peer, 2)
+    self.peer = nil
+  end
+  if self.enetHost then
+    pcall(self.enetHost.flush, self.enetHost)
+    pcall(self.enetHost.destroy, self.enetHost)
+    self.enetHost = nil
+  end
+  self.paired = false
+  self.closed = true
+  self.stalled = false
+  self.sessionActive = false
+  self.byeReceived = false
+  self.outbox = {}
+  self:setState(CoopNet.STATE.DISCONNECTED, "Transport closed")
+end
+
+return CoopNet

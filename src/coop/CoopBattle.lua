@@ -1,0 +1,1027 @@
+-- src/coop/CoopBattle.lua
+-- Co-op double battles for Gen2Recomped.
+--
+-- LOCKSTEP.  Each player runs the same trainer battle on their own machine:
+-- their own Pokemon in PLAYER_LEFT, the partner's in PLAYER_RIGHT.  A turn
+-- resolves only when both actions for THAT turn are in hand, and both sides
+-- re-seed the shared RNG from (battle seed, turn) right before resolving, so
+-- the dice agree even if an earlier turn drifted.
+--
+-- Actions cross the wire as plain descriptions, never as the engine's own
+-- tables: a move is its slot in the partner's move list, a switch is an index
+-- into the three chosen Pokemon, positions are mirrored (my LEFT is your
+-- RIGHT).  Sending the live move/mon tables used to hand the receiver a
+-- detached copy, so PP never moved and a switched-in partner duplicated.
+--
+-- The host is authoritative for HP and the result: it reports both after
+-- every turn and when the battle ends, and the guest corrects itself between
+-- turns (never mid-animation).
+--
+-- If the partner drops or leaves, their Pokemon is handed to the ally AI and
+-- the battle carries on; nobody is left waiting forever.  That is the ONLY
+-- way the AI takes a partner's place: an emergency, never a menu choice --
+-- a partner who is still connected and thinking is waited for.
+
+local Font = require("src.render.Font")
+local CoopLog = require("src.coop.CoopLog")
+local Strings = require("src.core.Strings")
+
+local CoopBattle = {}
+
+CoopBattle.active = false
+CoopBattle.currentBattle = nil
+CoopBattle.localAction = nil
+CoopBattle.partnerAction = nil
+CoopBattle.waitingForPartner = false
+CoopBattle.waitTimer = 0
+CoopBattle.fallbackAllowed = false
+
+CoopBattle.LINK_GRACE = 10.0       -- a dropped link gets this long to come back mid-battle
+CoopBattle.RESULT_GRACE = 6.0      -- guest finishes on its own this long after the host did
+CoopBattle.REPLACE_WAIT = 30.0     -- longest a fallen partner slot waits for their pick
+-- true = every fallen slot takes the first healthy Pokemon without asking
+-- (both copies agree by construction); the headless lockstep suite sets it
+CoopBattle.AUTO_REPLACE = false
+
+-- actions that arrive before their battle exists (keyed by invite id)
+CoopBattle.early = {}
+
+local POS = { PLAYER_LEFT = 0, OPPONENT_LEFT = 1, PLAYER_RIGHT = 2, OPPONENT_RIGHT = 3 }
+
+local function BattleStatePos()
+  local ok, BattleState = pcall(require, "src.battle.BattleState")
+  return (ok and BattleState and BattleState.POS) or POS
+end
+
+local function manager()
+  local ok, CoopManager = pcall(require, "src.coop.CoopManager")
+  if ok then return CoopManager end
+  return nil
+end
+
+local function linked()
+  local CM = manager()
+  return CM and CM.net and CM.isConnected and CM.isConnected()
+end
+
+local function send(msg)
+  local CM = manager()
+  if CM and CM.net and CM.connected then CM.net:send(msg) end
+end
+
+-- ---------------------------------------------------------------------
+-- deterministic RNG (Park-Miller).  Pure Lua and exact in doubles, so two
+-- machines given the same seed produce the same sequence regardless of
+-- platform or LÖVE build.
+-- ---------------------------------------------------------------------
+
+local MOD = 2147483647
+
+local function mixSeed(seed, turn)
+  local s = (math.floor(tonumber(seed) or 1) * 7919 + (turn or 0) * 104729 + 13) % MOD
+  if s <= 0 then s = s + MOD - 1 end
+  return s
+end
+CoopBattle.mixSeed = mixSeed
+
+local function newRng(seed)
+  local state = { x = mixSeed(seed, 0) }
+  local function nextUnit()
+    state.x = (state.x * 48271) % MOD
+    return state.x / MOD
+  end
+  local fn = function(a, b)
+    local r = nextUnit()
+    if a and b then
+      if b < a then a, b = b, a end
+      return a + math.floor(r * (b - a + 1))
+    end
+    if a then return 1 + math.floor(r * a) end
+    return r
+  end
+  return fn, state
+end
+CoopBattle.newRng = newRng
+
+local function reseed(battle, turn)
+  local c = battle.coop
+  if c and c.rngState then
+    c.rngState.x = mixSeed(c.seed, turn)
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- action encoding
+-- ---------------------------------------------------------------------
+
+local function mirror(pos)
+  pos = tonumber(pos)
+  if pos == POS.PLAYER_LEFT then return POS.PLAYER_RIGHT end
+  if pos == POS.PLAYER_RIGHT then return POS.PLAYER_LEFT end
+  return pos
+end
+CoopBattle.mirror = mirror
+
+local function indexOf(list, item)
+  for i, v in ipairs(list or {}) do
+    if v == item then return i end
+  end
+  return nil
+end
+
+function CoopBattle.encodeAction(battle, action, opts)
+  if opts and opts.locked then return { kind = "locked" } end
+  if action == nil then return { kind = "spectator" } end
+  if type(action) ~= "table" then return { kind = "locked" } end
+  if action.special == "playerSwitch" then
+    return { kind = "switch", index = indexOf(battle.coopChosenMons, action.mon),
+             species = action.mon and action.mon.species }
+  end
+  if action.special == "playerItem" then
+    return { kind = "item", id = action.id, targetNick = action.targetNick,
+             messages = action.messages }
+  end
+  if action.special then return { kind = "locked" } end
+  local P = BattleStatePos()
+  local user = battle.battlerAt and battle:battlerAt(P.PLAYER_LEFT)
+  return {
+    kind = "move",
+    id = action.id,
+    slot = user and indexOf(user.curMoves, action),
+    struggle = action.struggle or nil,
+    target = action.targetPosition,
+  }
+end
+
+-- Turn a partner's wire action into what the engine wants for the ally
+-- slot.  nil means "let the engine decide" (locked move, nobody on the field).
+function CoopBattle.decodeAction(battle, w)
+  if type(w) ~= "table" then return nil end
+  local P = BattleStatePos()
+  local ally = battle.battlerAt and battle:battlerAt(P.PLAYER_RIGHT)
+  if w.kind == "move" then
+    if not ally then return nil end
+    local moves = ally.curMoves or {}
+    local mv = w.slot and moves[w.slot]
+    if not mv or mv.id ~= w.id then
+      mv = nil
+      for _, m in ipairs(moves) do
+        if m.id == w.id then mv = m break end
+      end
+    end
+    if w.struggle or not mv then
+      mv = { id = w.id or "STRUGGLE", pp = 1, struggle = w.struggle or (w.id == "STRUGGLE") or nil }
+    end
+    mv.targetPosition = w.target and mirror(w.target) or nil
+    return mv
+  elseif w.kind == "switch" then
+    local party = (battle.ally and battle.ally.party) or {}
+    local mon = w.index and party[w.index]
+    -- the same-species search is only for an index this copy does not have:
+    -- never the Pokemon already standing in the partner's slot.  A fainted
+    -- one at the index stays the answer -- executeAction sends nobody in for
+    -- it, which is what the partner's own copy does with the same switch;
+    -- answering nil here would hand the slot to the ally AI on this copy only
+    if not mon and w.species then
+      local out = ally and ally.mon
+      for _, m in ipairs(party) do
+        if m.species == w.species and (m.hp or 0) > 0 and m ~= out then mon = m break end
+      end
+    end
+    if mon then return { special = "playerSwitch", mon = mon } end
+    return nil
+  elseif w.kind == "item" then
+    return { special = "playerItem", id = w.id, targetNick = w.targetNick, messages = w.messages }
+  end
+  return nil
+end
+
+-- ---------------------------------------------------------------------
+-- the owner's word on their own Pokemon
+--
+-- Experience is paid on the owner's machine only: a level-up raises the
+-- owner's stats and current HP, and the partner's copy never hears of it, so
+-- from that turn on the two battles computed different damage.  Every action
+-- therefore carries the sender's three Pokemon as they stand right now, and
+-- the receiver writes that onto its copies just before the turn resolves --
+-- at which point both machines hold the same numbers.
+-- ---------------------------------------------------------------------
+
+function CoopBattle.packOwnState(battle)
+  local out = {}
+  for i, mon in ipairs(battle.coopChosenMons or {}) do
+    if type(mon) == "table" then
+      local moves = {}
+      for j, mv in ipairs(mon.moves or {}) do
+        moves[j] = { id = mv.id, pp = mv.pp }
+      end
+      out[i] = {
+        species = mon.species, level = mon.level, exp = mon.exp,
+        hp = mon.hp, status = mon.status,
+        stats = mon.stats, statExp = mon.statExp,
+        moves = moves,
+      }
+    else
+      out[i] = false
+    end
+  end
+  return out
+end
+
+local function statsDiffer(a, b)
+  if type(a) ~= "table" or type(b) ~= "table" then return true end
+  for k, v in pairs(b) do
+    if a[k] ~= v then return true end
+  end
+  return false
+end
+
+function CoopBattle.applyPartnerState(battle, state)
+  if type(state) ~= "table" then return end
+  local party = battle.ally and battle.ally.party
+  if type(party) ~= "table" then return end
+  for i, st in ipairs(state) do
+    local copy = party[i]
+    if type(copy) == "table" and type(st) == "table" and copy.species == st.species then
+      copy.level = st.level or copy.level
+      copy.exp = st.exp or copy.exp
+      if type(st.statExp) == "table" then copy.statExp = st.statExp end
+      -- a NEW table, the way a level-up replaces it: an active battler keeps
+      -- reading the table it was built with, on the owner's machine too
+      if type(st.stats) == "table" and statsDiffer(copy.stats, st.stats) then
+        copy.stats = st.stats
+      end
+      if tonumber(st.hp) then copy.hp = st.hp end
+      copy.status = st.status
+      if type(st.moves) == "table" then
+        copy.moves = copy.moves or {}
+        for j, mv in ipairs(st.moves) do
+          local cur = copy.moves[j]
+          if type(cur) == "table" then
+            cur.id, cur.pp = mv.id, mv.pp
+          else
+            copy.moves[j] = { id = mv.id, pp = mv.pp }
+          end
+        end
+        for j = #copy.moves, #st.moves + 1, -1 do table.remove(copy.moves, j) end
+      end
+    end
+  end
+  local P = BattleStatePos()
+  local b = battle.battlerAt and battle:battlerAt(P.PLAYER_RIGHT)
+  if b and b.mon and b.shownHP and battle.phase ~= "messages" then b.shownHP = b.mon.hp end
+  if battle.syncShownStatus then pcall(battle.syncShownStatus, battle) end
+end
+
+-- ---------------------------------------------------------------------
+-- setup
+-- ---------------------------------------------------------------------
+
+local function cloneMon(m)
+  if type(m) ~= "table" then return nil end
+  local seen = {}
+  local function copy(v, depth)
+    if type(v) ~= "table" then return v end
+    if seen[v] or depth > 6 then return nil end
+    seen[v] = true
+    local out = {}
+    for k, val in pairs(v) do out[k] = copy(val, depth + 1) end
+    seen[v] = nil
+    return out
+  end
+  return copy(m, 0)
+end
+
+function CoopBattle.initBattle(battle, localChosenMons, partnerChosenMons, partnerInfo, seed, inviteId)
+  if not battle then return end
+
+  CoopLog.battle("INIT", "Co-op double with " .. tostring(partnerInfo and partnerInfo.name)
+                 .. " seed=" .. tostring(seed) .. " invite=" .. tostring(inviteId))
+  CoopBattle.active = true
+  CoopBattle.currentBattle = battle
+  CoopBattle.localAction = nil
+  CoopBattle.partnerAction = nil
+  CoopBattle.waitingForPartner = false
+  CoopBattle.waitTimer = 0
+  CoopBattle.fallbackAllowed = false
+
+  battle.double = true
+  battle.coopDouble = true
+  battle.coopChosenMons = localChosenMons
+  battle.coopPartnerAction = nil
+
+  local rng, rngState = newRng(seed or 1)
+  battle.rng = rng
+  battle.coop = {
+    seed = seed or 1,
+    rngState = rngState,
+    inviteId = inviteId,
+    turn = 1,
+    partnerActions = {},
+    partnerStates = {},
+    replaceQueue = {},     -- partner's replacement picks, in the order made
+    localTurnAction = nil,
+    localReady = false,
+    partnerLost = false,
+    waitTime = 0,
+    pendingSync = nil,
+    hostResult = nil,
+    hostResultAt = nil,
+    linkLostAt = nil,
+    finished = false,
+  }
+  local early = inviteId and CoopBattle.early[inviteId]
+  if early then
+    for turn, e in pairs(early) do
+      battle.coop.partnerActions[turn] = e.action
+      battle.coop.partnerStates[turn] = e.state
+    end
+    CoopBattle.early[inviteId] = nil
+  end
+
+  local BattleState = require("src.battle.BattleState")
+  local data = (battle.game and battle.game.data) or battle.data
+  local save = (battle.game and battle.game.save) or battle.save
+  local canMakeBattler = BattleState.makeBattler and battle.placeBattler and data and data.pokemon
+
+  local function place(pos, mon, isPlayer, saveRef, isAlly)
+    local ok, err = pcall(function()
+      local b = BattleState.makeBattler(data, mon, isPlayer, saveRef)
+      if isAlly then b.ally = true end
+      battle:placeBattler(pos, b)
+    end)
+    if not ok then CoopLog.error("BATTLE", "placeBattler " .. tostring(pos) .. " failed: " .. tostring(err)) end
+  end
+
+  if localChosenMons and localChosenMons[1] and canMakeBattler then
+    place(BattleState.POS.PLAYER_LEFT, localChosenMons[1], true, save, false)
+  end
+
+  local allyParty = partnerChosenMons or {}
+  battle:setAlly({
+    party = allyParty,
+    name = (partnerInfo and partnerInfo.name) or "PARTNER",
+    pic = partnerInfo and partnerInfo.sprite,
+    remote = true,
+  })
+  if allyParty[1] and canMakeBattler then
+    place(BattleState.POS.PLAYER_RIGHT, allyParty[1], true, nil, true)
+  end
+
+  -- Enemy side: a trainer with 2+ Pokemon sends its second one out beside
+  -- the first; a lone Pokemon is mirrored so the field is 2 v 2.
+  if battle.enemyParty and #battle.enemyParty >= 2 and canMakeBattler then
+    place(BattleState.POS.OPPONENT_RIGHT, battle.enemyParty[2], false, nil, false)
+    battle.enemyIndexRight = 2
+  elseif battle.enemyParty and battle.enemyParty[1] then
+    local secondMon = cloneMon(battle.enemyParty[1])
+    if secondMon then
+      secondMon.hp = (secondMon.stats and secondMon.stats.hp) or secondMon.maxHp or secondMon.hp or 20
+      battle.enemyParty = { battle.enemyParty[1], secondMon }
+      if canMakeBattler then
+        place(BattleState.POS.OPPONENT_RIGHT, secondMon, false, nil, false)
+        battle.enemyIndexRight = 2
+      end
+    end
+  end
+
+  pcall(function() battle:sendOutSecondPair() end)
+  if battle.syncSides then battle:syncSides() end
+
+  local origFinish = battle.onFinish
+  battle.onFinish = function(result)
+    local c = battle.coop
+    -- finish() pops the battle and only calls this after the return fade, so
+    -- the guard is its own flag: "finished" alone can already be set by then
+    if c and c.onFinishDone then return end
+    if c then
+      c.onFinishDone = true
+      c.finished = true
+    end
+    if CoopBattle.currentBattle == battle then
+      CoopBattle.active = false
+      CoopBattle.currentBattle = nil
+      CoopBattle.localAction = nil
+      CoopBattle.partnerAction = nil
+      CoopBattle.waitingForPartner = false
+      CoopBattle.fallbackAllowed = false
+    end
+    CoopLog.battle("FINISH", "Co-op battle ended with result: " .. tostring(result))
+
+    -- host tells the guest how it ended, so a guest whose copy drifted still
+    -- ends the same way
+    if not battle.isCoopGuest and c and not c.partnerLost then
+      send({ type = "coop_battle_sync", inviteId = c.inviteId, turn = c.turn - 1,
+             result = result, final = true })
+    end
+
+    if origFinish then origFinish(result) end
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- after the battle
+--
+-- WHAT A WON CO-OP DOUBLE LEAVES YOUR TEAM IN.  Gemini's version revived
+-- every fainted Pokemon to 1 HP and wiped every status after any win, which
+-- no Pokemon game does.  The rules are the cartridges':
+--
+--   * Gen 2 (the default): fainted Pokemon stay fainted, statuses stay, the
+--     way any won battle leaves them.  The one exception keeps the win a
+--     win: if NONE of your Pokemon can still fight -- your partner carried
+--     the battle -- the first of your three gets back up with 1 HP instead of
+--     the finish() check whiting you out after a victory.
+--   * "PARTNER HEALS" (CoopManager.partnerHeals, the co-op menu): Sinnoh's
+--     rule for battles fought beside a partner -- encounter.c heals the
+--     party after every battle that was not lost (Cheryl, Mira, Riley...),
+--     already used here for Platinum's escorts (afterBattle, gen4Escorted).
+--
+-- A LOST co-op double (both teams down) is an ordinary blackout for each
+-- player: half the money, back to the last POKEMON CENTER, the trainer
+-- still waiting.  A battle the script lets you lose (the Cherrygrove rival)
+-- is not, on either screen.
+--
+-- Returns a line for the battle box when the exception fired, else nil.
+-- ---------------------------------------------------------------------
+
+function CoopBattle.afterWinRules(battle)
+  local save = battle.game and battle.game.save
+  if not save then return nil end
+  local own = battle.coopChosenMons or save.party or {}
+  local CM = manager()
+  if CM and CM.partnerHeals then
+    local Pokemon = require("src.pokemon.Pokemon")
+    for _, mon in ipairs(own) do pcall(Pokemon.heal, mon) end
+    return Strings("%s healed\nyour POKéMON!", (CM.partner and CM.partner.name) or "PARTNER")
+  end
+  local Party = require("src.pokemon.Party")
+  if Party.firstHealthy(save.party or {}) then return nil end
+  for _, mon in ipairs(own) do
+    if type(mon) == "table" and not mon.isEgg then
+      mon.hp = 1
+      mon.status = nil
+      local name = mon.nickname or (battle.data and battle.data.pokemon and battle.data.pokemon[mon.species]
+                                   and battle.data.pokemon[mon.species].name) or mon.species
+      return Strings("%s got back\nup with 1 HP!", tostring(name))
+    end
+  end
+  return nil
+end
+
+-- ---------------------------------------------------------------------
+-- turn flow-- ---------------------------------------------------------------------
+-- turn flow
+-- ---------------------------------------------------------------------
+
+local function isSpectator(battle)
+  local P = BattleStatePos()
+  return not (battle.battlerAt and battle:battlerAt(P.PLAYER_LEFT))
+end
+
+local function setWaiting(battle, on)
+  CoopBattle.waitingForPartner = on and true or false
+  if on then
+    battle.phase = "waitPartner"
+  end
+end
+
+function CoopBattle.executeTurn(battle)
+  local c = battle.coop
+  if not c then return end
+  local turn = c.turn
+  local localAction = c.localTurnAction
+  local wire = c.partnerActions[turn]
+  local partnerState = c.partnerStates[turn]
+
+  c.partnerActions[turn] = nil
+  c.partnerStates[turn] = nil
+  c.localTurnAction = nil
+  c.localReady = false
+  c.waitTime = 0
+  c.turn = turn + 1
+  CoopBattle.localAction = nil
+  CoopBattle.partnerAction = nil
+  CoopBattle.fallbackAllowed = false
+  setWaiting(battle, false)
+
+  if not c.partnerLost and partnerState then
+    CoopBattle.applyPartnerState(battle, partnerState)
+  end
+  battle.coopPartnerAction = (not c.partnerLost) and CoopBattle.decodeAction(battle, wire) or nil
+  reseed(battle, turn)
+  CoopLog.battle("TURN", string.format("resolve turn %d (partner %s)", turn,
+                 c.partnerLost and "AI" or tostring(wire and wire.kind)))
+  local ok, err = pcall(function() battle:resolveTurn(localAction) end)
+  if not ok then
+    CoopLog.error("BATTLE", "resolveTurn failed on turn " .. turn .. ": " .. tostring(err))
+  end
+end
+
+local function tryExecute(battle)
+  local c = battle and battle.coop
+  if not c or not c.localReady then return end
+  if c.partnerLost or c.partnerActions[c.turn] then
+    CoopBattle.executeTurn(battle)
+  else
+    setWaiting(battle, true)
+  end
+end
+
+-- the local player has decided (or has nothing to decide: spectator/locked)
+function CoopBattle.submitLocal(battle, action, opts)
+  local c = battle and battle.coop
+  if not c then
+    -- not set up as a co-op battle after all: behave like a plain double
+    return battle:resolveTurn(action)
+  end
+  c.localTurnAction = action
+  c.localReady = true
+  CoopBattle.localAction = action or { special = "spectator" }
+  if not c.partnerLost then
+    c.lastSent = {
+      type = "coop_battle_action",
+      inviteId = c.inviteId,
+      turn = c.turn,
+      action = CoopBattle.encodeAction(battle, action, opts),
+      state = CoopBattle.packOwnState(battle),
+    }
+    send(c.lastSent)
+    CoopLog.battle("ACTION_SENT", "turn " .. tostring(c.turn))
+  end
+  tryExecute(battle)
+end
+
+function CoopBattle.onLocalActionSelected(battle, action, opts)
+  return CoopBattle.submitLocal(battle, action, opts)
+end
+
+function CoopBattle.onSpectatorTurn(battle)
+  if not battle then return end
+  local c = battle.coop
+  if c and c.localReady then return end -- already submitted, still waiting
+  if c and c.partnerLost then
+    -- nobody left to watch: the ally AI fights it out
+    c.localReady = true
+    c.localTurnAction = nil
+    return CoopBattle.executeTurn(battle)
+  end
+  CoopBattle.submitLocal(battle, nil)
+end
+
+function CoopBattle.onPartnerAction(msg)
+  if type(msg) ~= "table" then return end
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  local turn = tonumber(msg.turn)
+  if not turn then return end
+  if not c or (msg.inviteId and c.inviteId and msg.inviteId ~= c.inviteId) then
+    -- our copy of this battle is not up yet (still in the transition)
+    if msg.inviteId then
+      CoopBattle.early[msg.inviteId] = CoopBattle.early[msg.inviteId] or {}
+      CoopBattle.early[msg.inviteId][turn] = { action = msg.action, state = msg.state }
+    end
+    return
+  end
+  if turn < c.turn then
+    CoopLog.warn("BATTLE", "stale action for turn " .. turn .. " (at " .. c.turn .. ")")
+    return
+  end
+  c.partnerActions[turn] = msg.action or { kind = "spectator" }
+  c.partnerStates[turn] = msg.state
+  CoopBattle.partnerAction = msg.action
+  CoopLog.battle("ACTION_RECV", "turn " .. turn)
+  tryExecute(battle)
+end
+
+-- backward-compatible entry point (turn, action)
+function CoopBattle.onPartnerActionReceived(turn, action)
+  local c = CoopBattle.currentBattle and CoopBattle.currentBattle.coop
+  CoopBattle.onPartnerAction({ turn = turn or (c and c.turn), action = action,
+                               inviteId = c and c.inviteId })
+end
+
+-- The partner is gone (left, dropped, or the invite was aborted): their
+-- Pokemon keeps fighting under the ally AI and the turn we were waiting on
+-- goes ahead.
+function CoopBattle.partnerLeft(battle, reason)
+  local c = battle and battle.coop
+  if not c or c.partnerLost then return end
+  c.partnerLost = true
+  battle.coopPartnerAction = nil
+  CoopBattle.fallbackAllowed = false
+  CoopLog.battle("PARTNER_LOST", "partner gone (" .. tostring(reason) .. "); ally AI takes over")
+  local CM = manager()
+  if CM and CM.showStatus then CM.showStatus("Partner left. AI takes over!", 3) end
+  if c.localReady then
+    CoopBattle.executeTurn(battle)
+  elseif battle.phase == "waitPartner" then
+    setWaiting(battle, false)
+    battle.phase = "menu"
+  end
+end
+
+function CoopBattle.onPartnerLeft(msg)
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  if not c then return end
+  if msg and msg.inviteId and c.inviteId and msg.inviteId ~= c.inviteId then return end
+  CoopBattle.partnerLeft(battle, msg and msg.type or "left")
+end
+
+function CoopBattle.onLinkLost(reason)
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  if not c or c.partnerLost then return end
+  if reason == "lost" then
+    c.linkLostAt = c.linkLostAt or 0
+  else
+    CoopBattle.partnerLeft(battle, reason or "left")
+  end
+end
+
+-- The link came back.  A turn sent just before it dropped died with the old
+-- connection, so the one we are waiting on goes again; the partner drops it
+-- as stale if it did arrive.
+function CoopBattle.onLinkRestored()
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  if not c or c.partnerLost or c.finished then return end
+  c.linkLostAt = nil
+  if c.localReady and c.lastSent and c.lastSent.turn == c.turn then
+    send(c.lastSent)
+    CoopLog.battle("ACTION_RESENT", "turn " .. tostring(c.turn))
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- replacements after a faint: each player picks for their own slot
+-- ---------------------------------------------------------------------
+
+function CoopBattle.sendReplacement(battle, mon)
+  local c = battle and battle.coop
+  if not c or c.partnerLost then return end
+  send({ type = "coop_battle_replace", inviteId = c.inviteId,
+         index = indexOf(battle.coopChosenMons, mon), species = mon and mon.species })
+end
+
+function CoopBattle.onPartnerReplace(msg)
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  if not c or (msg.inviteId and c.inviteId and msg.inviteId ~= c.inviteId) then return end
+  table.insert(c.replaceQueue, { index = tonumber(msg.index), species = msg.species })
+end
+
+local function allyPick(battle, entry)
+  local party = (battle.ally and battle.ally.party) or {}
+  local taken = {}
+  for p = 0, 3 do
+    local b = battle.battlerAt and battle:battlerAt(p)
+    if b and b.mon then taken[b.mon] = true end
+  end
+  local function usable(m) return m and (m.hp or 0) > 0 and not m.isEgg and not taken[m] end
+  if entry then
+    local m = entry.index and party[entry.index]
+    if usable(m) then return m end
+    for _, mm in ipairs(party) do
+      if usable(mm) and mm.species == entry.species then return mm end
+    end
+  end
+  for _, mm in ipairs(party) do
+    if usable(mm) then return mm end
+  end
+  return nil
+end
+
+-- The state awaitPartnerReplacement pushes: a one-line box over the battle
+-- until the partner's pick is in the queue.  If they are gone (or take far
+-- too long) the next healthy Pokemon goes in, which is what both copies
+-- would have done anyway.
+local ReplaceWait = {}
+ReplaceWait.__index = ReplaceWait
+ReplaceWait.isOpaque = false
+
+function CoopBattle.newReplaceWait(battle, pos, place)
+  return setmetatable({ battle = battle, pos = pos, place = place, timer = 0, done = false }, ReplaceWait)
+end
+
+function ReplaceWait:finish(mon)
+  if self.done then return end
+  self.done = true
+  local stack = self.battle.game and self.battle.game.stack
+  if stack and stack.top and stack:top() == self then stack:pop() end
+  self.place(mon)
+end
+
+function ReplaceWait:update(dt)
+  self.timer = self.timer + (dt or 0.016)
+  local battle = self.battle
+  local c = battle.coop
+  if not c or c.partnerLost or self.timer >= CoopBattle.REPLACE_WAIT then
+    self:finish(allyPick(battle, nil))
+    return
+  end
+  local entry = table.remove(c.replaceQueue, 1)
+  if entry then self:finish(allyPick(battle, entry)) end
+end
+
+function ReplaceWait:draw()
+  local CM = manager()
+  local name = string.upper((CM and CM.partner and CM.partner.name) or "PARTNER")
+  if #name > 9 then name = name:sub(1, 9) end
+  love.graphics.setColor(1, 1, 1, 1)
+  Font.drawBox(0, 12, 20, 6)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw("WAITING " .. name, 8, 112)
+  Font.draw("TO SEND OUT ONE" .. string.rep(".", math.floor(self.timer * 2) % 4), 8, 128)
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+-- Hand the partner's Pokemon to the ally AI and tell them so.  Kept for the
+-- emergency paths; no button reaches it any more.
+function CoopBattle.cancelWaitAndBattleSolo(battle)
+  local c = battle and battle.coop
+  if not c then return end
+  send({ type = "coop_battle_leave", inviteId = c.inviteId })
+  CoopBattle.partnerLeft(battle, "local_b")
+end
+
+-- ---------------------------------------------------------------------
+-- host-authoritative corrections
+-- ---------------------------------------------------------------------
+
+local function packBattler(b)
+  if not b or not b.mon then return nil end
+  return {
+    species = b.mon.species,
+    nickname = b.mon.nickname,
+    hp = math.max(0, tonumber(b.mon.hp) or 0),
+    status = b.mon.status,
+  }
+end
+
+function CoopBattle.syncBattleHP(battle)
+  if not battle or not battle.coopDouble or battle.isCoopGuest then return end
+  local c = battle.coop
+  if not c or c.partnerLost or not linked() then return end
+  local P = BattleStatePos()
+  send({
+    type = "coop_battle_sync",
+    inviteId = c.inviteId,
+    turn = c.turn - 1,
+    -- in the HOST's frame: host = host's own Pokemon
+    host = packBattler(battle:battlerAt(P.PLAYER_LEFT)),
+    guest = packBattler(battle:battlerAt(P.PLAYER_RIGHT)),
+    enemy1 = packBattler(battle:battlerAt(P.OPPONENT_LEFT)),
+    enemy2 = packBattler(battle:battlerAt(P.OPPONENT_RIGHT)),
+  })
+end
+
+local function applyOne(battle, b, data, partyList)
+  if not b or not b.mon or type(data) ~= "table" then return false end
+  if data.species and b.mon.species ~= data.species then
+    -- a different Pokemon is standing there: the copies disagree about a
+    -- switch, which HP cannot fix -- log it rather than corrupt either mon
+    CoopLog.warn("BATTLE", "sync species mismatch " .. tostring(b.mon.species) .. " vs " .. tostring(data.species))
+    return false
+  end
+  local hp = tonumber(data.hp)
+  local localHp = tonumber(b.mon.hp) or 0
+  local changed = false
+  -- only correct a living Pokemon to another living value; a faint the guest
+  -- has not processed itself must come from its own engine, or the
+  -- replacement / end-of-battle flow never runs
+  if hp and hp > 0 and localHp > 0 and hp ~= localHp then
+    b.mon.hp = hp
+    changed = true
+  elseif hp and ((hp > 0) ~= (localHp > 0)) then
+    CoopLog.warn("BATTLE", string.format("faint disagreement on %s: host %d, guest %d",
+                 tostring(b.mon.species), hp, localHp))
+  end
+  if data.status ~= b.mon.status and (localHp > 0) then
+    b.mon.status = data.status
+    b.status = data.status
+    changed = true
+  end
+  if changed and partyList then
+    for _, pm in ipairs(partyList) do
+      if pm == b.mon or (pm.species == b.mon.species and pm.nickname == b.mon.nickname) then
+        pm.hp = b.mon.hp
+        pm.status = b.mon.status
+      end
+    end
+  end
+  return changed
+end
+
+function CoopBattle.applySync(battle, msg)
+  local P = BattleStatePos()
+  -- guest frame: own Pokemon is LEFT, the host's is RIGHT.  The guest's own
+  -- Pokemon are never overwritten from here: the host's copy of them can be
+  -- a level-up behind (experience is paid on the owner's machine), and the
+  -- guest's word on them travels with every action instead.
+  local changed = false
+  changed = applyOne(battle, battle:battlerAt(P.PLAYER_RIGHT), msg.host, battle.ally and battle.ally.party) or changed
+  changed = applyOne(battle, battle:battlerAt(P.OPPONENT_LEFT), msg.enemy1, battle.enemyParty) or changed
+  changed = applyOne(battle, battle:battlerAt(P.OPPONENT_RIGHT), msg.enemy2, battle.enemyParty) or changed
+  if changed then
+    CoopLog.battle("SYNC_APPLY", "corrected guest copy after turn " .. tostring(msg.turn))
+    for _, pos in ipairs({ P.PLAYER_LEFT, P.PLAYER_RIGHT, P.OPPONENT_LEFT, P.OPPONENT_RIGHT }) do
+      local b = battle:battlerAt(pos)
+      if b and b.shownHP then b.shownHP = b.mon.hp end
+    end
+    if battle.syncShownStatus then pcall(battle.syncShownStatus, battle) end
+  end
+end
+
+function CoopBattle.onPartnerBattleSync(msg)
+  local battle = CoopBattle.currentBattle
+  if not msg or not battle then return end
+  if not battle.coopDouble or not battle.isCoopGuest then return end
+  local c = battle.coop
+  if c and msg.inviteId and c.inviteId and msg.inviteId ~= c.inviteId then return end
+  if c and c.partnerLost then return end
+
+  if msg.result == "win" or msg.result == "lose" or msg.result == "loss" then
+    local result = (msg.result == "loss") and "lose" or msg.result
+    if c then
+      c.hostResult = result
+      c.hostResultAt = 0
+    else
+      CoopBattle.forceFinishBattle(battle, result)
+    end
+    return
+  end
+  if c then
+    c.pendingSync = msg
+  else
+    CoopBattle.applySync(battle, msg)
+  end
+end
+
+function CoopBattle.onPartnerHealedMon(msg)
+  if not msg or not CoopBattle.currentBattle then return end
+  local battle = CoopBattle.currentBattle
+  local function matches(mon)
+    return mon and (mon.nickname == msg.targetNick or (not mon.nickname and mon.species == msg.species)
+                    or (msg.targetNick == mon.species and mon.species == msg.species))
+  end
+  local function heal(mon)
+    if msg.hp then mon.hp = math.min(tonumber(msg.maxHp) or mon.hp or 20, msg.hp) end
+    mon.status = msg.status
+  end
+  -- the item was used on the partner's own Pokemon, or on ours from their bag
+  local lists = { battle.ally and battle.ally.party or {}, battle.coopChosenMons or {} }
+  for _, list in ipairs(lists) do
+    for _, mon in ipairs(list) do
+      if matches(mon) then heal(mon) end
+    end
+  end
+  local P = BattleStatePos()
+  for _, pos in ipairs({ P.PLAYER_LEFT, P.PLAYER_RIGHT }) do
+    local b = battle:battlerAt(pos)
+    if b and matches(b.mon) then
+      b.status = b.mon.status
+      if b.shownHP then b.shownHP = b.mon.hp end
+    end
+  end
+  if battle.syncShownStatus then pcall(battle.syncShownStatus, battle) end
+end
+
+-- End a battle the engine did not end on its own.  Goes through finish()
+-- when the battle is on top so music, the stack and the return fade are
+-- torn down the normal way; otherwise waits until it is.
+function CoopBattle.forceFinishBattle(battle, result)
+  if not battle then return end
+  local c = battle.coop
+  if c and c.finished then return end
+  result = (result == "loss") and "lose" or (result or "win")
+  local game = battle.game
+  local top = game and game.stack and (type(game.stack.top) == "function" and game.stack:top() or game.stack.top)
+  CoopLog.battle("FORCE_FINISH", "result: " .. tostring(result))
+  battle.result = result
+  if top == battle and battle.finish then
+    CoopBattle.active = false
+    CoopBattle.waitingForPartner = false
+    local ok, err = pcall(battle.finish, battle)
+    if not ok then
+      CoopLog.error("BATTLE", "finish failed: " .. tostring(err))
+      if battle.onFinish then pcall(battle.onFinish, result) end
+    end
+  elseif c then
+    c.forceResult = result
+  else
+    battle.phase = "finish"
+    if battle.onFinish then pcall(battle.onFinish, result) end
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- per-frame (from CoopManager.update, so it runs whatever is on top)
+-- ---------------------------------------------------------------------
+
+local function battleOnStack(battle)
+  local states = battle.game and battle.game.stack and battle.game.stack.states
+  if not states then return true end
+  for _, st in ipairs(states) do
+    if st == battle then return true end
+  end
+  return false
+end
+
+local function betweenTurns(battle)
+  return battle.phase == "menu" or battle.phase == "waitPartner"
+end
+
+function CoopBattle.tick(dt)
+  local battle = CoopBattle.currentBattle
+  local c = battle and battle.coop
+  if not c then return end
+  dt = dt or 0.016
+
+  if c.finished then return end
+  local onStack = battleOnStack(battle)
+  if onStack then
+    c.everOnStack = true
+  elseif c.everOnStack then
+    -- off the stack: either finish() popped it and onFinish follows after
+    -- the return fade, or something tore it down without finishing.  Either
+    -- way there is nothing left to wait for; onFinish still runs normally.
+    if not battle.result then
+      CoopLog.warn("BATTLE", "co-op battle left the stack unfinished; releasing")
+    end
+    c.finished = true
+    CoopBattle.active = false
+    CoopBattle.waitingForPartner = false
+    if CoopBattle.currentBattle == battle then CoopBattle.currentBattle = nil end
+    return
+  end
+
+  if c.forceResult then
+    CoopBattle.forceFinishBattle(battle, c.forceResult)
+    return
+  end
+
+  -- link watchdog: a drop gets a grace period, then the AI takes over
+  if not c.partnerLost then
+    if linked() then
+      c.linkLostAt = nil
+    else
+      c.linkLostAt = (c.linkLostAt or 0) + dt
+      if c.linkLostAt >= CoopBattle.LINK_GRACE then
+        CoopBattle.partnerLeft(battle, "timeout")
+      end
+    end
+  end
+
+  if CoopBattle.waitingForPartner then
+    c.waitTime = (c.waitTime or 0) + dt
+    CoopBattle.waitTimer = c.waitTime
+  end
+
+  if c.pendingSync and betweenTurns(battle) then
+    local msg = c.pendingSync
+    c.pendingSync = nil
+    CoopBattle.applySync(battle, msg)
+  end
+
+  if c.hostResult then
+    c.hostResultAt = (c.hostResultAt or 0) + dt
+    if c.hostResultAt >= CoopBattle.RESULT_GRACE or (betweenTurns(battle) and c.hostResultAt >= 1.0) then
+      CoopBattle.forceFinishBattle(battle, c.hostResult)
+    end
+  end
+end
+
+-- input while waiting (called from BattleState:update).  Nothing to do: the
+-- AI only steps in when the link is gone (tick's watchdog), never on a key.
+function CoopBattle.update(battle, dt)
+end
+
+-- Drawn over the bottom text box, where the battle's own messages go: the
+-- top of the screen belongs to the foes' HUDs and covering them hid their HP.
+function CoopBattle.drawWaitPrompt(battle)
+  if not CoopBattle.waitingForPartner then return end
+  local CM = manager()
+  local name = string.upper((CM and CM.partner and CM.partner.name) or "PARTNER")
+  if #name > 9 then name = name:sub(1, 9) end
+  local c = battle.coop
+  local line1, line2
+  if c and c.linkLostAt then
+    line1 = "LINK LOST..."
+    line2 = string.format("AI PLAYS IN %ds", math.max(0, math.ceil(CoopBattle.LINK_GRACE - c.linkLostAt)))
+  elseif isSpectator(battle) then
+    line1 = "WATCHING " .. name
+    line2 = "WAITING TURN..."
+  else
+    line1 = "WAITING " .. name
+    line2 = "CHOOSING" .. string.rep(".", math.floor((c and c.waitTime or 0) * 2) % 4)
+  end
+  love.graphics.setColor(1, 1, 1, 1)
+  Font.drawBox(0, 12, 20, 6)
+  love.graphics.setColor(0, 0, 0, 1)
+  Font.draw(line1, 8, 112)
+  Font.draw(line2, 8, 128)
+  love.graphics.setColor(1, 1, 1, 1)
+end
+
+return CoopBattle

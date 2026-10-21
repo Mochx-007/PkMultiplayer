@@ -1,0 +1,17 @@
+# development only: kept out of the release zip
+tests/coop_cable_club.lua
+tests/coop_live_chat.lua
+tests/coop_lockstep.lua
+tests/coop_partner_items.lua
+tests/coop_switch_rules.lua
+tests/coop_turn_rules.lua
+tests/drivers/coop_smoke.lua
+tests/foreign_wrapper.lua
+tests/foreign_wrapper_pre.lua
+tests/patch_scope.lua
+tests/run.lua
+tests/test_coop.lua
+tools/check_patches.lua
+tools/check_patches.py
+tools/gen_patches.py
+tools/luaunits.py
