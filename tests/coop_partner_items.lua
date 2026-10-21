@@ -6,8 +6,9 @@
 --     Pokemon: their machine applies it, and it leaves YOUR bag only when it
 --     worked; a stale pick (another species in that slot) or anything that is
 --     not medicine is refused;
---   * WARP TO PARTNER recharges, and never lands in a gym, the League or on
---     the water.
+--   * WARP TO PARTNER goes only to a town you have been to (FLY's rule),
+--     only when the partner says YES, recharges for ten minutes, and never
+--     lands in a gym, the League or on the water.
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local T = require("tests.modkit")
@@ -159,28 +160,64 @@ do
 end
 
 -- ---------------------------------------------------------------------
--- the warp recharges and stays out of gyms and water
+-- the warp: FLY's towns, the partner's YES, a ten-minute recharge, and
+-- never into gyms or onto water
 -- ---------------------------------------------------------------------
+
+Data.field = Data.field or {}
+Data.field.flyOrder = { "VIOLET_CITY", "CHERRYGROVE_CITY" }
+Data.maps = Data.maps or {}
+Data.maps.VIOLET_CITY = Data.maps.VIOLET_CITY or { id = "VIOLET_CITY", tileset = "OVERWORLD" }
+Data.maps.CHERRYGROVE_CITY = Data.maps.CHERRYGROVE_CITY or { id = "CHERRYGROVE_CITY", tileset = "OVERWORLD" }
 
 do
   local mine = newGame("ME")
+  mine.save.visited = { VIOLET_CITY = true }
   local p = CoopManager.partner
+  p.name = "TOBY"
   p.map, p.cx, p.cy, p.lastSeen = "VIOLET_CITY", 5, 6, 1e12
   p.inBattle, p.busy, p.inDialogue, p.surfing = false, false, false, false
   CoopManager.lastWarpAt = nil
+  CoopManager.warpAsk = nil
+  T.check(CoopManager.WARP_COOLDOWN >= 600, "the warp recharges for ten minutes")
 
   local ow = overworld(mine, "ROUTE_29")
+  ow.game = mine
   local ok, why = CoopManager.canWarpToPartner(ow)
-  T.check(ok, "a fresh warp to an idle partner is allowed (" .. tostring(why) .. ")")
-  T.check(CoopManager.warpToPartner(ow) and ow.warpedTo and ow.warpedTo.map == "VIOLET_CITY",
-          "the warp lands on the partner")
+  T.check(ok, "a warp to an idle partner in a town you know is allowed (" .. tostring(why) .. ")")
+
+  -- asking does not move you: the partner has to answer
+  sent = {}
+  T.check(CoopManager.warpToPartner(ow) and ow.warpedTo == nil, "WARP asks first and does not move you")
+  local req = lastSent("coop_warp_req")
+  T.check(req ~= nil, "the partner is sent a warp request")
+  T.check(not CoopManager.warpToPartner(ow), "a second WARP while waiting is refused")
+
+  -- a NO keeps you where you are
+  CoopManager.onWarpReply(ow, { type = "coop_warp_reply", id = req.id, ok = false })
+  T.check(ow.warpedTo == nil and CoopManager.warpAsk == nil, "a NO keeps you where you are")
+  T.check(CoopManager.warpCooldownLeft() == 0, "...and costs no recharge")
+
+  -- a YES (their yes/no box still closing) warps you onto them
+  CoopManager.warpToPartner(ow)
+  req = lastSent("coop_warp_req")
+  p.inDialogue = true
+  CoopManager.onWarpReply(ow, { type = "coop_warp_reply", id = req.id, ok = true })
+  p.inDialogue = false
+  T.check(ow.warpedTo and ow.warpedTo.map == "VIOLET_CITY", "a YES lands you on the partner")
+  T.check(lastSent("coop_warp") ~= nil, "the partner is told you arrived")
 
   ow = overworld(mine, "ROUTE_29")
   ok, why = CoopManager.canWarpToPartner(ow)
-  T.check(not ok and tostring(why):find("Warp ready in"), "a second warp waits for the recharge (" .. tostring(why) .. ")")
-  T.check(not CoopManager.warpToPartner(ow) and ow.warpedTo == nil, "...and does not move you")
+  T.check(not ok and tostring(why):find("Warp ready in"), "the next warp waits for the recharge (" .. tostring(why) .. ")")
 
   CoopManager.lastWarpAt = nil
+  p.map = "CHERRYGROVE_CITY"
+  ok, why = CoopManager.canWarpToPartner(ow)
+  T.check(not ok and tostring(why):find("towns you know"), "no warping to a town you have never been to (" .. tostring(why) .. ")")
+  p.map = "ROUTE_30"
+  ok = CoopManager.canWarpToPartner(ow)
+  T.check(not ok, "no warping onto a route (not a FLY destination)")
   p.map = "VIOLET_GYM"
   ok = CoopManager.canWarpToPartner(ow)
   T.check(not ok, "no warping into a gym")
@@ -193,6 +230,20 @@ do
   ok = CoopManager.canWarpToPartner(ow)
   T.check(not ok, "no warping to a partner in a battle")
   p.inBattle = false
+
+  -- B's side: busy players are not asked; idle ones get a YES/NO box
+  local theirs = newGame("TOBY")
+  local tow = overworld(theirs, "VIOLET_CITY")
+  tow.game = theirs
+  theirs.overworld = tow
+  theirs.stack:push(tow)
+  sent = {}
+  CoopManager.onWarpRequest(tow, { type = "coop_warp_req", id = 7 })
+  local box = theirs.stack:top()
+  T.check(box ~= tow and box and box.choice, "an idle partner is asked YES / NO")
+  box.choice(true)
+  local reply = lastSent("coop_warp_reply")
+  T.check(reply and reply.id == 7 and reply.ok == true, "...and their YES goes back")
 end
 
 T.finish("co-op partner items and warp")

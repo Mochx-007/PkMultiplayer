@@ -3,6 +3,32 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.2.0
+
+Both players need 1.2.0: the link protocol is now 8 (the warp request is new).
+
+### Added
+
+- **The cartridge's own emote bubbles again.**  Optional: import your Gold,
+  Silver or Crystal ROM for this mod in the MODS panel (IMPORT on the mod's
+  row).  The eight bubbles are cut from it once on your device and used for
+  the co-op emotes and for every trainer's "!", as in the old co-op build.
+  Nothing from the ROM ships with the mod.
+- Without the ROM, the emotes are now this mod's own drawn 16x16 bubbles
+  instead of the tiny text pills.
+
+### Changed
+
+- **WARP TO PARTNER, much harder to use:** only to a town or city you have
+  already visited (the places FLY can take you), your partner has to say
+  YES, and it recharges for ten minutes.  A NO costs no recharge.
+
+### Fixed
+
+- TRADE and BATTLE P1 VS P2 with no POKeMON crashed the game (the link
+  battle has no lead to send out).  Now you cannot ask without a POKeMON, a
+  partner with none declines on their own, and both are told why.
+
 ## 1.1.0
 
 ### Added

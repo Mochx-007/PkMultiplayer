@@ -111,6 +111,16 @@ return function(game)
     U.shot(game, DIR .. "/2c_chat.png")
     U.tap(game, "b")
     U.wait(10)
+
+    -- the emote picker: the cartridge's bubbles when this copy imported a
+    -- ROM for the mod, the mod's drawn ones when it did not
+    local field = game.data.field
+    U.log(role .. ": emote sheet " .. tostring(field.emotionBubbles and field.emotionBubbles.path))
+    check(require("src.coop.CoopEmotes").openPicker(game), "the emote picker opens")
+    U.wait(10)
+    U.shot(game, DIR .. "/2d_emotes.png")
+    U.tap(game, "b")
+    U.wait(10)
   end
 
   if not solo then U.wait(120) end

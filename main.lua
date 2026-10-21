@@ -167,6 +167,30 @@ if next(STATE.pending) and not STATE.searcher then
 end
 STATE.apply = applyTo
 
+-- ----------------------------------------------- the cartridge's bubbles
+-- Only when the player imported their ROM in the MODS panel (lib/Emotes.lua);
+-- the field data is loaded before mods, and game.ready catches a reload.
+-- (Headless runs -- modkit validate, the tests -- have no images to make.)
+if generation == 2 and love and love.filesystem and love.image then
+  local Emotes = chunkFor("lib/Emotes.lua")()
+  local function installEmotes()
+    local Data = package.loaded["src.core.Data"]
+    if type(Data) ~= "table" then return end
+    local ok, path, why = pcall(Emotes.install, mod, Data)
+    if ok and path then
+      log("info", "emote bubbles: %s", path)
+    elseif not ok then
+      log("warn", "emote bubbles: %s", tostring(path))
+    elseif why ~= "no ROM imported" then
+      log("warn", "emote bubbles: %s", tostring(why))
+    end
+  end
+  installEmotes()
+  if mod.events and mod.events.on then
+    mod.events:on("game.ready", function() installEmotes() end)
+  end
+end
+
 -- ------------------------------------------------- 3. menu and goodbye
 if mod.hooks and mod.hooks.wrap then
   mod.hooks:wrap("ui.start_menu.items", Hooks.startMenuItems)

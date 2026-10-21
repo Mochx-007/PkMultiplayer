@@ -82,6 +82,7 @@ local function onOff(v) return v and "ON" or "OFF" end
 
 -- the warp row shows its cooldown while it recharges
 local function warpLabel()
+  if CoopManager.warpAsking and CoopManager.warpAsking() then return "WARP (ASKING)" end
   local left = math.ceil(CoopManager.warpCooldownLeft())
   if left <= 0 then return "WARP TO PARTNER" end
   return string.format("WARP (%d:%02d)", math.floor(left / 60), left % 60)

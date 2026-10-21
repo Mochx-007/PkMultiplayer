@@ -39,6 +39,14 @@ releases de GitHub).
 | Emotes | START → CO-OP (LAN) → **EMOTE** |
 | IP de ZeroTier | se muestra sola si la app de ZeroTier está conectada (redes con los rangos automáticos de ZeroTier Central) |
 
+## Emotes originales (opcional)
+
+Sin nada más, los emotes son globos dibujados por el mod. Para tener **los
+del cartucho**: launcher → **MODS** → en PkMultiplayer pulsa **IMPORT** y
+elige tu ROM de Oro, Plata o Cristal. El mod recorta los 8 globos una vez en
+tu dispositivo (también vuelve el "!" original de los entrenadores). El mod
+no incluye nada del ROM.
+
 ## Qué incluye
 
 | | |
@@ -48,7 +56,8 @@ releases de GitHub).
 | Emotes | tecla **Y** |
 | Combates dobles | contra entrenadores, en lockstep, con las reglas de dobles de HeartGold/SoulSilver y una IA rival pensada para dobles |
 | Historia compartida | los eventos que vive uno los vive el otro; las batallas importantes se preguntan antes |
-| Extras | intercambios por el Cable Club, P1 vs P2, objetos para los Pokémon del compañero, ir hasta tu compañero (warp), Concurso de Bichos y Salón de la Fama compartidos, reloj compartido |
+| Extras | intercambios por el Cable Club, P1 vs P2, objetos para los Pokémon del compañero, Concurso de Bichos y Salón de la Fama compartidos, reloj compartido |
+| Warp | solo a pueblos que ya visitaste (como VUELO), tu compañero tiene que aceptar, y se recarga en 10 minutos |
 
 Menú co-op (START → CO-OP (LAN) estando conectado): CHAT, WARP TO PARTNER, ITEM
 FOR PARTNER, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT.

@@ -6,7 +6,8 @@
 -- trainer's "!" from (field.emotionBubbles; Gen 2's eight are exported by
 -- RomExtractorGen2) -- hung where the field hangs them: centred, sixteen
 -- pixels above the owner's centre, with the bubble's little pop-in bounce.
--- A dataset without the sheet falls back to a drawn pill with the symbol.
+-- A dataset without the sheet (no ROM imported for the mod) falls back to
+-- this mod's own drawn bubbles, the same size and anchor.
 --
 -- Ids stay the ones the link already speaks ("exclaim", "heart", ...), so an
 -- older partner still understands them; the two whose art changed map on
@@ -103,18 +104,157 @@ function CoopEmotes.draw(game, id, fx, fy, age)
                        cx - math.floor(rect.w / 2), cy - math.floor(rect.h / 2))
     return
   end
-  -- no sheet: a pill with the symbol, same anchor
-  local MicroFont = require("src.render.MicroFont")
-  local w = math.max(13, MicroFont.width(e.sym) + 6)
-  local bx, by = cx - math.floor(w / 2), cy - 4
-  love.graphics.setColor(0, 0, 0, 1)
-  love.graphics.rectangle("fill", bx + 1, by, w - 2, 9)
-  love.graphics.rectangle("fill", bx, by + 1, w, 7)
-  love.graphics.setColor(1, 1, 1, 1)
-  love.graphics.rectangle("fill", bx + 1, by + 1, w - 2, 7)
-  love.graphics.setColor(0, 0, 0, 1)
-  MicroFont.draw(e.sym, bx + 3, by + 2)
-  love.graphics.setColor(1, 1, 1, 1)
+  -- no sheet: this mod's own drawn bubble, same size and anchor
+  local drawn = CoopEmotes.drawnBubble(e.id)
+  if drawn then
+    love.graphics.setColor(1, 1, 1, 1)
+    love.graphics.draw(drawn, cx - 8, cy - 8)
+  end
+end
+
+-- ---------------------------------------------------------------------
+-- The drawn bubbles, for a game without the cartridge's sheet (the MODS
+-- panel's optional ROM import gives the real ones; lib/Emotes.lua).  This
+-- mod's own 16x16 art, in the field's OBJ shades: # black, + grey, o white,
+-- . clear.  The bubble is shared; each emote paints a 10x10 symbol into it.
+-- ---------------------------------------------------------------------
+
+local BUBBLE = {
+  "..############..",
+  ".#oooooooooooo#.",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  "#oooooooooooooo#",
+  ".#oooooooooooo#.",
+  "..##oooo#######.",
+  "....#oo#........",
+  ".....##.........",
+}
+
+local SYMBOLS = {
+  exclaim = {
+    "....##....",
+    "...####...",
+    "...####...",
+    "...####...",
+    "....##....",
+    "....##....",
+    "..........",
+    "....##....",
+    "....##....",
+    "..........",
+  },
+  question = {
+    "...####...",
+    "..##..##..",
+    "......##..",
+    ".....##...",
+    "....##....",
+    "....##....",
+    "..........",
+    "....##....",
+    "....##....",
+    "..........",
+  },
+  happy = {
+    "..........",
+    "..#....#..",
+    ".#+#..#+#.",
+    "..........",
+    ".#......#.",
+    ".##....##.",
+    "..######..",
+    "...####...",
+    "..........",
+    "..........",
+  },
+  sad = {
+    "..........",
+    ".#......#.",
+    "..##..##..",
+    "..........",
+    "...+..+...",
+    "..........",
+    "...####...",
+    "..#....#..",
+    ".#......#.",
+    "..........",
+  },
+  heart = {
+    "..........",
+    ".##...##..",
+    "#++#.####.",
+    "#+#######.",
+    "#########.",
+    ".#######..",
+    "..#####...",
+    "...###....",
+    "....#.....",
+    "..........",
+  },
+  bolt = {
+    "......##..",
+    ".....##...",
+    "....##....",
+    "...######.",
+    "......##..",
+    ".....##...",
+    "....##....",
+    "...##.....",
+    "..##......",
+    "..........",
+  },
+  sleep = {
+    "..........",
+    ".######...",
+    ".....##...",
+    "....##....",
+    "...##.....",
+    "..##......",
+    ".######.#.",
+    ".......##.",
+    "......#.#.",
+    "..........",
+  },
+}
+
+local drawnCache = {}
+
+-- The drawn bubble for emote `id` as an Image (nil without a renderer).
+function CoopEmotes.drawnBubble(id)
+  local e = CoopEmotes.get(id)
+  local sym = e and SYMBOLS[e.id]
+  if not sym then return nil end
+  local hit = drawnCache[e.id]
+  if hit ~= nil then return hit or nil end
+  local ok, img = pcall(function()
+    local data = love.image.newImageData(16, 16)
+    local shade = { ["#"] = 0, ["+"] = 170 / 255, ["o"] = 1 }
+    local function put(x, y, ch)
+      local v = shade[ch]
+      if v then data:setPixel(x, y, v, v, v, 1) end
+    end
+    for y, row in ipairs(BUBBLE) do
+      for x = 1, 16 do put(x - 1, y - 1, row:sub(x, x)) end
+    end
+    for y, row in ipairs(sym) do
+      for x = 1, 10 do
+        if row:sub(x, x) ~= "." then put(x + 2, y + 1, row:sub(x, x)) end
+      end
+    end
+    local made = love.graphics.newImage(data)
+    made:setFilter("nearest", "nearest")
+    return made
+  end)
+  drawnCache[e.id] = (ok and img) or false
+  return drawnCache[e.id] or nil
 end
 
 -- ---------------------------------------------------------------------

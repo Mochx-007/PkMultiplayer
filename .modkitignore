@@ -16,3 +16,4 @@ tools/check_patches.lua
 tools/check_patches.py
 tools/gen_patches.py
 tools/luaunits.py
+tools/pack.py

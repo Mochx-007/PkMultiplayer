@@ -108,6 +108,20 @@ CoopLink.openLinkState = openLinkState
 
 local MODE_TEXT = { trade = "TRADE", battle = "BATTLE" }
 
+-- THE CABLE CLUB NEEDS A POKEMON ON BOTH SIDES.  The game only offers LINK
+-- with a party (StartMenu), so LinkState and LinkBattle assume one: an empty
+-- party on either side crashed the link battle (LinkBattle.newGuest) and
+-- left a trade room with nothing to trade.  A trade needs a Pokemon; a
+-- battle needs one that is not an egg.
+function CoopLink.partyReady(game, mode)
+  local party = game and game.save and game.save.party or {}
+  local Party = require("src.pokemon.Party")
+  for _, mon in ipairs(party) do
+    if type(mon) == "table" and (mode ~= "battle" or not Party.isEgg(mon)) then return true end
+  end
+  return false
+end
+
 -- one player asks
 function CoopLink.invite(game, mode)
   local CM = manager()
@@ -116,6 +130,10 @@ function CoopLink.invite(game, mode)
     return false
   end
   if not MODE_TEXT[mode] then return false end
+  if not CoopLink.partyReady(game, mode) then
+    CM.showStatus("You have no POKéMON!", 2.5)
+    return false
+  end
   local id = string.format("L%d-%d", os.time(), math.random(1, 2 ^ 24))
   local CoopWaitModal = require("src.coop.CoopWaitModal")
   local pName = string.upper(CM.partner.name or "PARTNER")
@@ -139,6 +157,12 @@ function CoopLink.onInvite(game, msg)
   if not (game and CM) then return end
   local function answer(kind, reason)
     CM.net:send({ type = kind, id = msg.id, reason = reason })
+  end
+  -- no POKeMON first: that one will not go away by waiting
+  local wanted = MODE_TEXT[msg.mode] and msg.mode or nil
+  if wanted and not CoopLink.partyReady(game, wanted) then
+    answer("coop_link_decline", "no_mons")
+    return
   end
   if CoopLink.adapter or CoopLink.pending then answer("coop_link_decline", "busy") return end
   local ow = game.overworld
@@ -187,7 +211,10 @@ function CoopLink.onDecline(game, msg)
   closePending(game)
   local CM = manager()
   if CM then
-    CM.showStatus(msg.reason == "busy" and "Partner is busy" or "Partner said no", 2.5)
+    local why = (msg.reason == "busy" and "Partner is busy")
+      or (msg.reason == "no_mons" and "Partner has no POKéMON")
+      or "Partner said no"
+    CM.showStatus(why, 2.5)
   end
 end
 

@@ -1,7 +1,7 @@
 {
   "id": "PkMultiplayer",
   "name": "PkMultiplayer (Online Co-op)",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "api": 2,
   "entry": "main.lua",
   "profile": "overhaul",
@@ -18,5 +18,21 @@
   "affects_link": false,
   "description": "Online co-op for Gold, Silver and Crystal (and Red/Blue/Yellow): two players in one Johto over LAN or ZeroTier. See each other walk, chat (T) and emote (Y), live the story's events together, trade through the Cable Club, and fight trainers as a 2-vs-2 double battle in lockstep, with HeartGold/SoulSilver's doubles rules. Start it from START > CO-OP (LAN), or NEW CO-OP GAME / CONTINUE CO-OP on the title screen. Patches engine code: Gen 1 and Gen 2 only.",
   "github": "Mochx-007/PkMultiplayer",
-  "update_check": true
+  "update_check": true,
+  "required_imports": [
+    {
+      "id": "johto_rom",
+      "name": "Your Gold / Silver / Crystal ROM (optional)",
+      "description": "Optional. Gives the co-op emotes and the trainers' \"!\" the cartridge's own bubbles, cut from your ROM on this device; without it they are drawn ones. The mod works either way.",
+      "file": "baseroms/johto.gbc",
+      "format": "gb",
+      "size": 2097152,
+      "magic": [
+        "504f4b454d4f4e5f474c44",
+        "504f4b454d4f4e5f534c56",
+        "504d5f4352595354414c"
+      ],
+      "magic_offset": 308
+    }
+  ]
 }

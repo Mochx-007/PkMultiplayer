@@ -71,4 +71,42 @@ for _, mode in ipairs({ "trade", "battle" }) do
   end
   tA:close(); tB:close()
 end
+-- NO POKEMON, NO CABLE CLUB.  An empty party on either side crashed the
+-- link battle (LinkBattle.newGuest indexed a nil lead): the asker cannot ask,
+-- and the one asked declines on its own, with the reason.
+do
+  local statuses = {}
+  local realStatus = CoopManager.showStatus
+  CoopManager.showStatus = function(text) statuses[#statuses + 1] = text end
+  local sent = {}
+  CoopManager.net = { send = function(_, m) table.insert(sent, m) end, flush = function() end }
+  CoopManager.partner = CoopManager.partner or {}
+  CoopLink.pending, CoopLink.adapter, CoopLink.asked = nil, nil, nil
+
+  local empty = newGame("EMPTY")
+  empty.save.party = {}
+  for _, mode in ipairs({ "trade", "battle" }) do
+    sent = {}
+    T.check(CoopLink.invite(empty, mode) == false, mode .. ": no invite without a POKeMON")
+    T.check(#sent == 0, mode .. ": nothing is sent")
+  end
+  T.check(statuses[#statuses] and statuses[#statuses]:find("no POK") ~= nil,
+          "the player is told why (" .. tostring(statuses[#statuses]) .. ")")
+
+  local asked = newGame("ASKED")
+  asked.save.party = {}
+  CoopManager.overworldIdle = CoopManager.overworldIdle or function() return true end
+  sent = {}
+  CoopLink.onInvite(asked, { type = "coop_link_invite", id = "L1", mode = "battle", name = "TOBY" })
+  T.check(sent[1] and sent[1].type == "coop_link_decline" and sent[1].reason == "no_mons",
+          "an invite to a player with no POKeMON is declined (" .. tostring(sent[1] and sent[1].reason) .. ")")
+  T.check(asked.stack:top().isOverworld, "...without opening anything on their screen")
+
+  CoopLink.pending = { id = "L1", mode = "battle" }
+  CoopLink.onDecline(asked, { id = "L1", reason = "no_mons" })
+  T.check(statuses[#statuses] and statuses[#statuses]:find("Partner has no") ~= nil,
+          "the asker is told the partner has none (" .. tostring(statuses[#statuses]) .. ")")
+  CoopManager.showStatus = realStatus
+end
+
 T.finish("co-op cable club tunnel")
