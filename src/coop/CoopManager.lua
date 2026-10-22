@@ -123,6 +123,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopGift",
   "src.coop.CoopSoulLink",
   "src.coop.CoopGear",
+  "src.coop.CoopWild",
 }
 CoopManager.render = nil
 
@@ -131,6 +132,7 @@ local POS_INTERVAL_MOVING = 1 / 15
 local POS_INTERVAL_IDLE = 0.5
 local ENGAGE_WINDOW = 8.0
 local INVITE_TIMEOUT = 20.0
+CoopManager.INVITE_TIMEOUT = INVITE_TIMEOUT
 local PARTNER_FRESH = 3.0     -- a partner position older than this is stale
 
 local EMOTE_SYMBOLS = {
@@ -1467,7 +1469,13 @@ CoopManager.markTrainerBeaten = markTrainerBeaten
 -- who never ran the trainer's own script.
 function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
   local BattleState = require("src.battle.BattleState")
-  local p2Battle = BattleState.newTrainer(game, msg.oppClass, msg.partyIndex or 1)
+  local wild = msg.battleKind == "wild"
+  local p2Battle
+  if wild then
+    p2Battle = require("src.coop.CoopWild").guestBattle(game, msg)
+  else
+    p2Battle = BattleState.newTrainer(game, msg.oppClass, msg.partyIndex or 1)
+  end
   p2Battle.isCoopGuest = true
   p2Battle.npcId = msg.npcId
   p2Battle.headerEvent = msg.headerEvent
@@ -1480,6 +1488,10 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
 
   p2Battle.onFinish = function(result)
     local cOw = game.overworld or ow2
+    if wild then
+      if cOw and cOw.afterBattle then pcall(cOw.afterBattle, cOw, result, p2Battle) end
+      return
+    end
     if result == "win" then
       markTrainerBeaten(game, cOw, msg)
       awardLeaderBadge(game, msg.oppClass)
@@ -1875,7 +1887,12 @@ function CoopManager.promptCoopBattle(ow, battle, opts)
   if not CoopManager.connected or not battle or battle.coopHandled then
     return false
   end
-  -- Wild battles (grass, caves, water, fishing) are always solo
+  -- Wild battles are solo, unless WILD TOGETHER asks the partner along
+  -- (src/coop/CoopWild.lua)
+  if battle.kind == "wild" then
+    local okW, CoopWild = pcall(require, "src.coop.CoopWild")
+    return okW and CoopWild.offer(ow, battle, opts) or false
+  end
   if battle.kind ~= "trainer" then
     return false
   end

@@ -299,4 +299,66 @@ do
   CoopManager.connected = true
 end
 
+-- ---------------------------------------------------------------------
+-- WILD TOGETHER: a random encounter asks a nearby partner along
+-- ---------------------------------------------------------------------
+
+do
+  local CoopWild = require("src.coop.CoopWild")
+  local BattleState = require("src.battle.BattleState")
+  local Pokemon = require("src.pokemon.Pokemon")
+  save.party = { Pokemon.new(Data, A, 10) }
+  game.stack = newStack()
+  local battle = BattleState.newWild(game, B, 7)
+  local ow = { map = { id = "ROUTE_29" }, player = { cellX = 5, cellY = 5 }, pkmRandomEncounter = true,
+               game = game }
+  local p = CoopManager.partner
+  p.map, p.cx, p.cy, p.lastSeen, p.healthy = "ROUTE_29", 6, 5, math.huge, 2
+  p.inBattle, p.busy, p.inDialogue = false, false, false
+  CoopManager.net.stalled = false
+  CoopManager.setRule("wildTogether", false)
+  T.check(not CoopWild.offer(ow, battle), "rule off: the battle is yours")
+  CoopManager.setRule("wildTogether", true)
+  ow.pkmRandomEncounter = nil
+  T.check(not CoopWild.offer(ow, battle), "a scripted wild battle stays yours")
+  ow.pkmRandomEncounter = true
+  p.cx = 40
+  T.check(not CoopWild.offer(ow, battle), "a partner across the map is not asked")
+  p.cx = 6
+  sent = {}
+  T.check(CoopWild.offer(ow, battle), "a partner close by is asked")
+  local inv = sentOf("coop_battle_invite")[1]
+  T.check(inv and inv.battleKind == "wild" and inv.species == B and inv.wildMon, "the invite carries the wild Pokemon")
+  T.check(CoopManager.pendingBattleInvite and CoopManager.pendingBattleInvite.battle == battle, "...and the battle waits on the answer")
+  CoopManager.pendingBattleInvite = nil
+  game.stack = newStack()
+
+  local copy = CoopWild.guestBattle(game, inv)
+  local a, b = battle.enemy.mon, copy.enemy.mon
+  T.check(b.species == a.species and b.level == a.level and b.hp == a.hp
+          and (b.dvs and a.dvs and b.dvs.attack == a.dvs.attack or b.dvs == a.dvs),
+    "the partner fights the same individual")
+  CoopWild.prepare(copy)
+  T.check(copy.coopWild and copy.enemyParty and copy.enemyParty[1] == b, "it becomes a one-Pokemon party, mirrored by the double")
+
+  local ItemEffects = require("src.inventory.ItemEffects")
+  local ballId
+  for id, def in pairs(Data.items) do
+    if ItemEffects.isBall and ItemEffects.isBall(id, def) then ballId = id end
+  end
+  if ballId then
+    save.inventory = { [ballId] = 1 }
+    local plain = ItemEffects.use(Data, save, ballId, nil, battle)
+    local r, msgs = ItemEffects.use(Data, save, ballId, nil, copy)
+    T.check(plain == "ball" and r == "failed" and msgs and msgs[1]:find("together"), "no BALL in a battle together")
+  end
+
+  sent = {}
+  copy.coopDouble = true
+  copy.coop = { inviteId = "w1" }
+  copy:tryRun()
+  T.check(copy.result == "run" and #sentOf("coop_wild_run") == 1, "RUN gets both away, no roll")
+  CoopManager.setRule("wildTogether", false)
+end
+
 T.finish("co-op extras")

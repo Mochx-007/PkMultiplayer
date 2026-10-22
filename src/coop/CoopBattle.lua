@@ -368,6 +368,9 @@ function CoopBattle.initBattle(battle, localChosenMons, partnerChosenMons, partn
     place(BattleState.POS.PLAYER_RIGHT, allyParty[1], true, nil, true)
   end
 
+  -- WILD TOGETHER: a wild Pokemon is a one-Pokemon party, mirrored below
+  pcall(function() require("src.coop.CoopWild").prepare(battle) end)
+
   -- Enemy side: a trainer with 2+ Pokemon sends its second one out beside
   -- the first; a lone Pokemon is mirrored so the field is 2 v 2.
   if battle.enemyParty and #battle.enemyParty >= 2 and canMakeBattler then

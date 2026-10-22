@@ -219,6 +219,17 @@ Hooks.modules["src.battle.BattleState"] = function(BattleState)
   -- the ball and the hit hung in the air beside the mon.  What the rigid move
   -- leaves over at each mark is handed to the animation player as a per-side
   -- nudge (Gen2AnimPlayer:objectOffset below), in the layer's own pixels.
+  -- WILD TOGETHER (src/coop/CoopWild.lua): RUN gets both players away, no roll
+  wrap(BattleState, "BattleState", "tryRun", function(tryRun)
+    return function(self, ...)
+      if self.coopDouble and self.coopWild then
+        local W = package.loaded["src.coop.CoopWild"]
+        if W and W.run then return W.run(self) end
+      end
+      return tryRun(self, ...)
+    end
+  end)
+
   -- SOUL LINK: the first catch in an area is bound to the partner's
   -- (src/coop/CoopSoulLink.lua)
   wrap(BattleState, "BattleState", "storeCaughtMon", function(storeCaughtMon)
@@ -300,6 +311,20 @@ Hooks.modules["src.battle.Gen2AnimPlayer"] = function(Gen2AnimPlayer)
       u = u * u * (3 - 2 * u)
       local p, e = n.player, n.enemy
       return dx + p[1] + (e[1] - p[1]) * u, dy + p[2] + (e[2] - p[2]) * u
+    end
+  end)
+end
+
+-- WILD TOGETHER: four Pokemon out, no BALL can be aimed
+Hooks.modules["src.inventory.ItemEffects"] = function(ItemEffects)
+  wrap(ItemEffects, "ItemEffects", "use", function(use)
+    return function(data, save, id, target, battle, ...)
+      local result, a, b, c = use(data, save, id, target, battle, ...)
+      if result == "ball" and type(battle) == "table" and battle.coopWild then
+        local W = package.loaded["src.coop.CoopWild"]
+        return "failed", { (W and W.NO_BALL) or "Not while you\nbattle together!" }
+      end
+      return result, a, b, c
     end
   end)
 end
@@ -396,6 +421,20 @@ end
 
 Hooks.modules["src.world.OverworldController"] = function(OverworldState)
   -- a wild / trainer battle may become a co-op double (the partner is asked)
+  -- A STEP OR SWEET SCENT is a random encounter: WILD TOGETHER only shares
+  -- those (a scripted wild battle, a gift, a legendary stays the player's)
+  for _, name in ipairs({ "onStepComplete", "gen2SweetScentEncounter" }) do
+    wrap(OverworldState, "OverworldState", name, function(original)
+      return function(self, ...)
+        self.pkmRandomEncounter = true
+        local ok, a, b, c = pcall(original, self, ...)
+        self.pkmRandomEncounter = nil
+        if not ok then error(a, 0) end
+        return a, b, c
+      end
+    end)
+  end
+
   wrap(OverworldState, "OverworldState", "pushBattle", function(pushBattle)
     return function(self, battle, opts, ...)
       local CM = coopManager()
