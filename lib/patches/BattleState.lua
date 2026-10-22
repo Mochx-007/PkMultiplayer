@@ -1430,6 +1430,16 @@ return {
       } },
     { name = "BattleState:tryRun", kind = "method",
       base = "9994fdd7", edits = {
+        { at = 2, cut = 0,
+          ctx = { before = { "2543f5d9" }, old = {  }, after = { "837e4f6f", "1db05ed2" } },
+          put = {
+            "  -- TEAM UP WILD (src/coop/CoopWild.lua): in a co-op double against wild",
+            "  -- Pokemon RUN gets both players away, with no roll",
+            "  if self.coopDouble and self.coopWild then",
+            "    local CoopWild = package.loaded[\"src.coop.CoopWild\"]",
+            "    if CoopWild and CoopWild.run then return CoopWild.run(self) end",
+            "  end",
+          } },
         { at = 58, cut = 0,
           ctx = { before = { "30082613", "4b4478ec" }, old = {  }, after = { "bdbf5bf0", "071703bb" } },
           put = {

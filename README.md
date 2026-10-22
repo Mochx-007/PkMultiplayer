@@ -52,16 +52,33 @@ no incluye nada del ROM.
 | | |
 |---|---|
 | Mundo compartido | ves a tu compañero en tu mapa, con su nombre encima |
-| Pokémon que te sigue | tu primer Pokémon (no debilitado) camina detrás de ti, como en HeartGold/SoulSilver, con su icono del cartucho; háblale con **A**. Tu compañero también lo ve. Se apaga en MODS → PkMultiplayer → OPTIONS → POKEMON FOLLOWS YOU. Solo en Oro/Plata/Cristal |
+| Pokémon que te sigue | tu primer Pokémon (no debilitado) camina detrás de ti, como en HeartGold/SoulSilver, con su icono del cartucho; háblale con **A**. Tu compañero también lo ve. Si es shiny destella, y si te quiere mucho a veces encuentra objetos (un **!** encima: háblale). Se apaga en MODS → PkMultiplayer → OPTIONS → POKEMON FOLLOWS YOU. Solo en Oro/Plata/Cristal |
 | Chat | tecla **T** (también durante un combate doble); en móvil, ver arriba |
 | Emotes | tecla **Y** |
 | Combates dobles | contra entrenadores, en lockstep, con las reglas de dobles de HeartGold/SoulSilver y una IA rival pensada para dobles |
 | Historia compartida | los eventos que vive uno los vive el otro; las batallas importantes se preguntan antes |
 | Extras | intercambios por el Cable Club, P1 vs P2, objetos para los Pokémon del compañero, Concurso de Bichos y Salón de la Fama compartidos, reloj compartido |
 | Warp | solo a pueblos que ya visitaste (como VUELO), tu compañero tiene que aceptar, y se recarga en 10 minutos |
+| Salvajes en pareja | regla **TEAM UP WILD**: un salvaje que te sale al caminar con tu compañero cerca (8 pasos, mismo mapa) le pregunta si se une, y pelean un doble contra el salvaje y su gemelo. Juntos no hay Poké Balls; **RUN** os saca a los dos |
+| Ver su combate | **WATCH**: una pantallita con el combate de tu compañero en vivo |
+| Visitantes | hasta 4 jugadores más entran al mundo del anfitrión con **VISIT** (puerto de la sesión + 1): caminan, chatean y mandan emotes con todos; cada uno juega su partida |
+| Soul Link | regla **SOUL LINK**: el Nuzlocke de dos. La primera captura de cada uno en un área queda unida a la del otro; si una cae, caen las dos y no se pueden curar. **SOUL LINKS** muestra las parejas |
+| Guardería unida | regla **LINK DAYCARE**: con un Pokémon en tu guardería y otro en la de tu compañero, el suyo es el segundo padre en la tuya. Cada uno saca su huevo; ningún Pokémon sale de su partida |
+| Torre de Combate | (Cristal) cada combate de un desafío puede ser un doble co-op: tu compañero se une desde donde esté, con Pokémon bajo el límite de nivel, y su equipo vuelve como entró |
+| Regalo Misterioso | **MYSTERY GIFT**: una vez al día por compañero, cada juego elige un objeto para el otro |
+| Pokédex | **POKéDEX**: lo que tiene tu compañero y tú no, y al revés. Regla **SHARE DEX**: sus capturas cuentan como VISTAS en la tuya |
+| Pokégear | tu compañero encabeza la agenda (llamarlo abre el chat y le suena el Pokégear) y su marca parpadea en el mapa |
+| Reconexión | la partida recuerda el último enlace: el anfitrión vuelve a escuchar y el invitado vuelve a llamar solo (opción **AUTO RECONNECT**); fila **RECONNECT** en el menú |
 
-Menú co-op (START → CO-OP (LAN) estando conectado): CHAT, WARP TO PARTNER, ITEM
-FOR PARTNER, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT.
+Menú co-op (START → CO-OP (LAN) estando conectado; se desplaza): CHAT, WARP TO
+PARTNER, ITEM FOR PARTNER, WATCH, MYSTERY GIFT, POKéDEX, SHARE DEX, TEAM UP WILD,
+LINK DAYCARE, SOUL LINK, SOUL LINKS, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1
+VS P2, EMOTE, DISCONNECT. Sin conectar: RECONNECT, HOST, JOIN, VISIT, STORY
+SYNC, EMOTE, EXIT.
+
+Los **ataques** caen sobre el Pokémon que hay de verdad, también en combates
+individuales: el cartucho apunta al centro de la caja de 56×56, y contra un
+Pokémon pequeño (Pidgey, Natu...) el golpe quedaba en el aire.
 
 ## Limitaciones conocidas
 
@@ -69,6 +86,11 @@ FOR PARTNER, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT
   pero no hace nada.
 - Sin tu ROM importado para el mod, los emotes son globos dibujados por el
   mod (ver "Emotes originales").
+- Con el mod de vóxeles (DramaticShapes) los combates individuales siguen en
+  3D, pero los dobles co-op se juegan en la pantalla clásica (su 3D solo sabe
+  de combates individuales).
+- Los visitantes no comparten historia, combates ni objetos: solo el mundo,
+  el chat y los emotes.
 - El Pokémon que te sigue usa el icono del menú de equipo (dos frames, sin
   vista de espaldas), que es lo que el cartucho tiene; se esconde en bici y
   surfeando.
@@ -91,8 +113,18 @@ fight trainers as a **2-vs-2 double battle** in lockstep, with
 HeartGold/SoulSilver's doubles rules.
 
 Your lead Pokémon also **walks behind you**, HGSS-style, wearing its
-cartridge party icon (talk to it with **A**; your partner sees it too). Gold,
-Silver and Crystal only; switch it off under MODS → PkMultiplayer → OPTIONS.
+cartridge party icon (talk to it with **A**; your partner sees it too; it
+sparkles when shiny and sometimes finds items). Gold, Silver and Crystal only;
+switch it off under MODS → PkMultiplayer → OPTIONS.
+
+Also: **TEAM UP WILD** (fight wild Pokémon as a co-op double), **WATCH** your
+partner's battle live, up to four **VISIT**ors in the host's world, **SOUL
+LINK** (the two-player Nuzlocke), **LINK DAYCARE** (breed with your partner's
+Pokémon, nothing leaves its save), the **Battle Tower in multi** (Crystal),
+**MYSTERY GIFT** over the link, a **POKéDEX** comparison and **SHARE DEX**,
+your partner in the **POKéGEAR**, and the link picked back up on its own after
+a drop or a restart. Move animations now land on the Pokémon actually there,
+in singles too.
 
 It is a mod for the official [Gen2Recomped](https://github.com/UNDERdecoded/Gen2Recomped).
 
@@ -135,7 +167,10 @@ PKM_EAGER=1 PKM_PRE=<mod>/tests/foreign_wrapper_pre.lua \
 ```
 
 `tests/drivers/coop_smoke.lua` runs two real game instances linked over
-127.0.0.1 (`PKM_ROLE=host|guest`, see the file).
+127.0.0.1 (`PKM_ROLE=host|guest`, see the file).  So do `wild_together.lua`,
+`watch_smoke.lua` and `tower_smoke.lua` (Crystal); `visit_smoke.lua` runs
+three (`PKM_ROLE=host|guest|visitor`).  `tests/coop_features.lua` covers the
+1.4 extras and `tests/anim_fit.lua` the move-animation fit.
 
 ### Regenerating the patches
 

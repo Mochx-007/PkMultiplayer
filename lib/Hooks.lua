@@ -219,17 +219,6 @@ Hooks.modules["src.battle.BattleState"] = function(BattleState)
   -- the ball and the hit hung in the air beside the mon.  What the rigid move
   -- leaves over at each mark is handed to the animation player as a per-side
   -- nudge (Gen2AnimPlayer:objectOffset below), in the layer's own pixels.
-  -- WILD TOGETHER (src/coop/CoopWild.lua): RUN gets both players away, no roll
-  wrap(BattleState, "BattleState", "tryRun", function(tryRun)
-    return function(self, ...)
-      if self.coopDouble and self.coopWild then
-        local W = package.loaded["src.coop.CoopWild"]
-        if W and W.run then return W.run(self) end
-      end
-      return tryRun(self, ...)
-    end
-  end)
-
   -- SOUL LINK: the first catch in an area is bound to the partner's
   -- (src/coop/CoopSoulLink.lua)
   wrap(BattleState, "BattleState", "storeCaughtMon", function(storeCaughtMon)

@@ -3,6 +3,65 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.0
+
+**Both players need 1.4.0** (link protocol 9: a 1.3 partner would not
+understand the new invites).
+
+### Added
+
+- **TEAM UP WILD** (shared rule, off by default): a wild Pokemon that jumps
+  out of the grass -- a step or SWEET SCENT, never a scripted one, a roaming
+  beast or the Bug-Catching Contest -- while your partner is within eight
+  steps on the same map asks them to join.  On a yes it is a co-op double
+  against the wild Pokemon and its twin, in the same lockstep as a trainer
+  double.  No BALL can be thrown together; RUN gets you both away.
+- **WATCH <partner>**: a small live screen of your partner's battle -- their
+  foe and their Pokemon, levels, HP bars, status and the line on their text
+  box.  Frames only go out while someone is watching.
+- **VISIT**: up to four more players can walk the host's world while a
+  session is open (the session's port + 1).  Everybody sees everybody, with
+  names over their heads, and the chat and emotes reach the whole group.
+  Visitors play their own game: no story, battles or items cross with them.
+- **SOUL LINK** (shared rule): the two-player Nuzlocke.  The first catch of
+  each of you in an area (a cave's or a tower's floors are one area) is
+  bound to the other's; when either faints both are gone, and no POKEMON
+  CENTER or REVIVE brings them back.  A faint while apart is settled on the
+  next link.  SOUL LINKS lists the pairs.
+- **LINK DAYCARE** (shared rule): with one Pokemon in your Route 34 DAY-CARE
+  and one in your partner's, theirs is the second parent at yours (and yours
+  at theirs).  Each game lays its own egg.  Nobody's Pokemon leaves its save:
+  only a copy travels, and only the breeding sums see it.
+- **The BATTLE TOWER in multi** (Crystal): each of the seven battles can be a
+  co-op double.  The partner is asked wherever they are, brings up to three
+  Pokemon under the level cap, fights the same opponent and gets their team
+  back as it went in.  The challenge and its prizes are the challenger's.
+- **MYSTERY GIFT** over the link: once a day per partner, each game picks an
+  item for the other from the cartridge's own table.
+- **POKeDEX**: what your partner has caught that you have not, and the other
+  way round.  **SHARE DEX** (shared rule) marks each other's catches as SEEN.
+- **Your partner in the POKeGEAR**: first in the phone book (a call opens the
+  chat and rings their POKeGEAR) and a blinking mark on the town map.
+- **Picking the link back up**: the save remembers the last link; the host
+  listens again and the guest dials again on their own when the save is back
+  on the map (MODS -> PkMultiplayer -> OPTIONS -> AUTO RECONNECT).  A
+  RECONNECT row in the menu, and the round trip in ms in its header.
+- **The walking Pokemon** sparkles when it is shiny, and a friendly one now
+  and then finds an item ("!" over it); talk to it to get it.
+
+### Changed
+
+- **Move animations land on the Pokemon actually there**, in single battles
+  as well as doubles.  The cartridge aims every hit at the middle of the full
+  56x56 box, so on a small foe (Pidgey, Natu...) it landed in the air above
+  it; each side's half of an animation now goes onto the pic's own pixels.
+  With DramaticShapes' 3D battles each side is also corrected when the camera
+  swings.
+- With DramaticShapes on, co-op doubles are fought on the classic battle
+  screen: its 3D staging only knows singles and drew every name and HP bar
+  twice.
+- The co-op menu scrolls when it has more than nine rows.
+
 ## 1.3.1
 
 Same link protocol (8): plays with 1.2.0 and 1.3.0.
