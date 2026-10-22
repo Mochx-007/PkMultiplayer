@@ -318,6 +318,48 @@ Hooks.modules["src.world.OverworldController"] = function(OverworldState)
     end
   end)
 
+  -- syncObjectVisibility REMOVES every npc that is not one of this map's own
+  -- objects, so the walking Pokemon (no map object at all, and carrying the
+  -- previous map's id across a seam) is set aside and put back
+  wrap(OverworldState, "OverworldState", "syncObjectVisibility", function(syncObjectVisibility)
+    return function(self, ...)
+      local held
+      for _, name in ipairs({ "npcs", "entities" }) do
+        for _, e in ipairs(self[name] or {}) do
+          if type(e) == "table" and (e.pkmFollower or e.pkmFollowerRemote) then
+            held = held or { npcs = {}, entities = {} }
+            table.insert(held[name], e)
+          end
+        end
+      end
+      local a, b, c = syncObjectVisibility(self, ...)
+      if held then
+        for name, list in pairs(held) do
+          local present = {}
+          for _, e in ipairs(self[name] or {}) do present[e] = true end
+          for _, e in ipairs(list) do
+            if not present[e] then
+              self[name] = self[name] or {}
+              table.insert(self[name], e)
+            end
+          end
+        end
+      end
+      return a, b, c
+    end
+  end)
+
+  -- A on the walking Pokemon: it answers itself (it has no map text)
+  wrap(OverworldState, "OverworldState", "talkTo", function(talkTo)
+    return function(self, npc, ...)
+      if type(npc) == "table" and npc.pkmFollower then
+        local okF, FollowMon = pcall(require, "src.follow.FollowMon")
+        if okF and FollowMon.talk(self.game or package.loaded["src.core.Game"], self, npc) then return end
+      end
+      return talkTo(self, npc, ...)
+    end
+  end)
+
   -- the partner's avatar, emotes and chat bubble (world pass), and the
   -- co-op overlays (UI pass)
   wrap(OverworldState, "OverworldState", "drawWorld", function(drawWorld)
@@ -334,6 +376,71 @@ Hooks.modules["src.world.OverworldController"] = function(OverworldState)
       local a, b, c = drawUI(self, ...)
       local CM = coopManager()
       if CM and CM.drawUI then CM.drawUI(self) end
+      return a, b, c
+    end
+  end)
+end
+
+-- THE WALKING POKEMON (src/follow/FollowMon.lua) rides on Yellow's Pikachu's
+-- calls: the engine already makes them on every map load (onMapEntered),
+-- every frame (update), and across a seam (current -> keepPikachu, then
+-- rebase). Outside Yellow those do nothing of their own.
+Hooks.modules["src.world.PikachuFollower"] = function(PikachuFollower)
+  local function follow()
+    local ok, FollowMon = pcall(require, "src.follow.FollowMon")
+    return ok and FollowMon or nil
+  end
+
+  wrap(PikachuFollower, "PikachuFollower", "onMapEntered", function(onMapEntered)
+    return function(game, ow, opts, ...)
+      local keep = opts and opts.keepPikachu
+      local mine = type(keep) == "table" and keep.pkmFollower
+      -- the engine's own follower must not be handed ours to re-list
+      local a, b, c
+      if mine then
+        local o = {}
+        for k, v in pairs(opts) do o[k] = v end
+        o.keepPikachu = nil
+        a, b, c = onMapEntered(game, ow, o, ...)
+      else
+        a, b, c = onMapEntered(game, ow, opts, ...)
+      end
+      local F = follow()
+      if F then pcall(F.onMapEntered, game, ow, opts) end
+      return a, b, c
+    end
+  end)
+
+  wrap(PikachuFollower, "PikachuFollower", "update", function(update)
+    return function(game, ow, ...)
+      local a, b, c = update(game, ow, ...)
+      local F = follow()
+      if F then
+        local ok, err = pcall(F.update, game, ow)
+        if not ok and err ~= Hooks._lastFollowErr then
+          Hooks._lastFollowErr = err
+          pcall(function() require("src.coop.CoopLog").error("FOLLOW", tostring(err)) end)
+        end
+      end
+      return a, b, c
+    end
+  end)
+
+  -- Yellow's Pikachu first; otherwise ours, so crossConnection carries it
+  wrap(PikachuFollower, "PikachuFollower", "current", function(current)
+    return function(ow, ...)
+      local pika = current(ow, ...)
+      if pika then return pika end
+      local F = follow()
+      return F and F.current(ow) or nil
+    end
+  end)
+
+  wrap(PikachuFollower, "PikachuFollower", "rebase", function(rebase)
+    return function(ow, dx, dy, ...)
+      local a, b, c = rebase(ow, dx, dy, ...)
+      local F = follow()
+      if F then pcall(F.rebase, ow, dx, dy) end
       return a, b, c
     end
   end)

@@ -71,7 +71,7 @@ local MODULES = {
   "src.coop.CoopLink", "src.coop.CoopLog", "src.coop.CoopManager",
   "src.coop.CoopMenu", "src.coop.CoopNet", "src.coop.CoopNewGame",
   "src.coop.CoopStory", "src.coop.CoopWaitModal",
-  "src.battle.DoublesAI", "src.render.MicroFont",
+  "src.battle.DoublesAI", "src.render.MicroFont", "src.follow.FollowMon",
 }
 for _, name in ipairs(MODULES) do
   local rel = name:gsub("%.", "/") .. ".lua"
@@ -79,6 +79,23 @@ for _, name in ipairs(MODULES) do
     package.preload[name] = function(...)
       return chunkFor(rel)(...)
     end
+  end
+end
+
+-- the walking Pokemon (src/follow/FollowMon.lua): Gen 2 only, and a switch
+-- in the MODS panel
+if mod.options and mod.options.define then
+  pcall(mod.options.define, mod.options, {
+    { key = "follower", type = "toggle", label = "POKEMON FOLLOWS YOU", default = true },
+  })
+end
+do
+  local FollowMon = require("src.follow.FollowMon")
+  FollowMon.enabled = function()
+    if generation ~= 2 then return false end
+    if not (mod.options and mod.options.get) then return true end
+    local ok, on = pcall(mod.options.get, mod.options, "follower")
+    return not ok or on ~= false
   end
 end
 

@@ -7,6 +7,7 @@ tests/coop_partner_items.lua
 tests/coop_switch_rules.lua
 tests/coop_turn_rules.lua
 tests/drivers/coop_smoke.lua
+tests/drivers/follow_smoke.lua
 tests/foreign_wrapper.lua
 tests/foreign_wrapper_pre.lua
 tests/patch_scope.lua

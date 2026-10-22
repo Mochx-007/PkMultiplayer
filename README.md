@@ -52,6 +52,7 @@ no incluye nada del ROM.
 | | |
 |---|---|
 | Mundo compartido | ves a tu compañero en tu mapa, con su nombre encima |
+| Pokémon que te sigue | tu primer Pokémon (no debilitado) camina detrás de ti, como en HeartGold/SoulSilver, con su icono del cartucho; háblale con **A**. Tu compañero también lo ve. Se apaga en MODS → PkMultiplayer → OPTIONS → POKEMON FOLLOWS YOU. Solo en Oro/Plata/Cristal |
 | Chat | tecla **T** (también durante un combate doble); en móvil, ver arriba |
 | Emotes | tecla **Y** |
 | Combates dobles | contra entrenadores, en lockstep, con las reglas de dobles de HeartGold/SoulSilver y una IA rival pensada para dobles |
@@ -66,8 +67,11 @@ FOR PARTNER, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1 VS P2, EMOTE, DISCONNECT
 
 - Solo funciona en juegos de **Gen 1 y Gen 2**. En el resto el mod se carga
   pero no hace nada.
-- Los emotes se dibujan como globos simples, porque Gen2Recomped no importa
-  la hoja de globos del cartucho.
+- Sin tu ROM importado para el mod, los emotes son globos dibujados por el
+  mod (ver "Emotes originales").
+- El Pokémon que te sigue usa el icono del menú de equipo (dos frames, sin
+  vista de espaldas), que es lo que el cartucho tiene; se esconde en bici y
+  surfeando.
 - Si Gen2Recomped cambia mucho las funciones que toca el mod, el mod lo
   detecta y deja ese módulo sin parchear (lo verás en `log.txt`). En ese
   caso hay que actualizar PkMultiplayer.
@@ -85,6 +89,10 @@ Two players, one Johto. You see each other walk, chat (**T**) and emote
 (**Y**), live the story's events together, trade through the Cable Club and
 fight trainers as a **2-vs-2 double battle** in lockstep, with
 HeartGold/SoulSilver's doubles rules.
+
+Your lead Pokémon also **walks behind you**, HGSS-style, wearing its
+cartridge party icon (talk to it with **A**; your partner sees it too). Gold,
+Silver and Crystal only; switch it off under MODS → PkMultiplayer → OPTIONS.
 
 It is a mod for the official [Gen2Recomped](https://github.com/UNDERdecoded/Gen2Recomped).
 

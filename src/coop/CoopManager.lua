@@ -681,6 +681,8 @@ function CoopManager.removePartnerNpc(ow)
     end
   end
   CoopManager.partnerNpc = nil
+  local okF, FollowMon = pcall(require, "src.follow.FollowMon")
+  if okF then FollowMon.remote = nil end
 end
 
 local function makePartnerNpc(ow, game, spriteId)
@@ -807,6 +809,13 @@ function CoopManager.updatePartnerRender(ow, dt)
   npc.moving = walking
   npc.progress = math.floor(r.progress or 0)
   npc.stepFlip = math.floor((r.progress or 0) / 16) % 2 == 1
+
+  -- ...and their walking Pokemon behind them
+  local okF, FollowMon = pcall(require, "src.follow.FollowMon")
+  if okF then
+    local info = (not partner.surfing) and partner.follow or nil
+    pcall(FollowMon.updateRemote, game, ow, dt, info, ox, oy)
+  end
 end
 
 -- kept for callers/tests that still ask for it by the old name
@@ -2190,6 +2199,8 @@ H.coop_pos = function(ow, msg)
   partner.busy = msg.busy == true
   partner.surfing = msg.surf == true
   if msg.healthy then partner.healthy = msg.healthy end
+  -- their walking Pokemon (FollowMon.snapshot); nil = none to draw
+  partner.follow = type(msg.fol) == "table" and msg.fol or nil
   partner.lastSeen = now()
 end
 
@@ -2440,6 +2451,20 @@ end
 -- per-frame
 -- ---------------------------------------------------------------------
 
+local function followSnapshot(ow)
+  local ok, FollowMon = pcall(require, "src.follow.FollowMon")
+  if not ok then return nil end
+  local okS, snap = pcall(FollowMon.snapshot, ow)
+  return okS and snap or nil
+end
+
+-- the follower's cell (or none), so its step reaches the partner at once
+local function followCell(fol)
+  if type(fol) ~= "table" then return nil end
+  return ("%s:%d:%d:%s"):format(tostring(fol.s), math.floor(((fol.px or 0) + 8) / 16),
+                                math.floor(((fol.py or 0) + 8) / 16), tostring(fol.f))
+end
+
 local function broadcastPosition(ow, dt, force)
   local p = ow and ow.player
   if not (p and ow.map) then return end
@@ -2461,6 +2486,7 @@ local function broadcastPosition(ow, dt, force)
     busy = not overworldIdle(game, ow) and not inBattle,
     healthy = healthyCount(game and game.save),
     surf = p.surfing and true or nil,
+    fol = followSnapshot(ow),
   }
 
   -- send at once when something a viewer would notice changed (a step
@@ -2472,6 +2498,7 @@ local function broadcastPosition(ow, dt, force)
                   or last.sprite ~= snapshot.sprite or last.inBattle ~= snapshot.inBattle
                   or last.inDialogue ~= snapshot.inDialogue or last.busy ~= snapshot.busy
                   or last.moving ~= snapshot.moving
+                  or followCell(last.fol) ~= followCell(snapshot.fol)
   CoopManager.syncTimer = CoopManager.syncTimer + (dt or 0)
   local interval = (snapshot.moving or snapshot.hy ~= 0) and POS_INTERVAL_MOVING or POS_INTERVAL_IDLE
   if not (force or changed or CoopManager.syncTimer >= interval) then return end

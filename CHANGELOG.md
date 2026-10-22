@@ -3,6 +3,28 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.3.0
+
+Works with a 1.2.0 partner (same link protocol, 8); they just do not see
+your walking Pokemon until they update.
+
+### Added
+
+- **Your Pokemon follows you**, the way it does in HeartGold / SoulSilver:
+  the first party Pokemon that is not fainted (and not an egg) walks one
+  cell behind you, wearing its party menu icon -- the cartridge's own
+  overworld Pokemon sheets, from your ROM import.  It changes when the lead
+  does, hides on the bike and while surfing, crosses map seams with you,
+  and A on it shows how it feels about you (its friendship).  Gold, Silver
+  and Crystal.  ON by default: MODS -> PkMultiplayer -> OPTIONS ->
+  POKEMON FOLLOWS YOU.
+- In co-op you see your partner's walking Pokemon behind them too.
+
+### Fixed
+
+- The README still said the emotes could only be drawn bubbles; since 1.2.0
+  they are the cartridge's own when you import your ROM for the mod.
+
 ## 1.2.0
 
 Both players need 1.2.0: the link protocol is now 8 (the warp request is new).
