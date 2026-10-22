@@ -473,4 +473,17 @@ do
   save.daycare = nil
 end
 
+-- ---------------------------------------------------------------------
+-- BATTLE TOWER multi: only Pokemon under the cap may join
+-- ---------------------------------------------------------------------
+
+do
+  local CoopTower = require("src.coop.CoopTower")
+  local party = { { level = 50, hp = 10 }, { level = 20, hp = 10 }, { level = 18, hp = 0 },
+                  { level = 10, hp = 5, isEgg = true }, { level = 15, hp = 3 } }
+  local ok = CoopTower.eligible(party, 20)
+  T.check(#ok == 2 and ok[1].level == 20 and ok[2].level == 15, "over the cap, fainted and eggs stay home")
+  T.check(not CoopTower.isTower({ kind = "trainer" }) and CoopTower.isTower({ battleTower = true }), "a tower battle is told apart")
+end
+
 T.finish("co-op extras")

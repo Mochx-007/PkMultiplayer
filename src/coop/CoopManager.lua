@@ -128,6 +128,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopWatch",
   "src.coop.CoopVisit",
   "src.coop.CoopDayCare",
+  "src.coop.CoopTower",
 }
 CoopManager.render = nil
 
@@ -955,11 +956,11 @@ function CoopManager.isPartnerInBattle()
 end
 
 -- Same map, idle and heard from recently.  Returns ok, reason.
-local function partnerReachable(ow)
+local function partnerReachable(ow, anywhere)
   local partner = CoopManager.partner
   if not CoopManager.isConnected() then return false, "Partner not linked" end
   if CoopManager.net.stalled then return false, "Partner link is weak" end
-  if not (ow and ow.map and mapsMatch(partner.map, ow.map.id)) then
+  if not anywhere and not (ow and ow.map and mapsMatch(partner.map, ow.map.id)) then
     return false, "Partner is far away"
   end
   if (now() - (partner.lastSeen or 0)) > PARTNER_FRESH then return false, "Partner not responding" end
@@ -969,8 +970,10 @@ local function partnerReachable(ow)
 end
 
 -- ...and with a Pokemon that can fight.  Returns ok, reason.
-function CoopManager.partnerAvailable(ow)
-  local ok, why = partnerReachable(ow)
+-- `anywhere`: the partner may be on another map (a BATTLE TOWER battle,
+-- whose room is the challenger's alone)
+function CoopManager.partnerAvailable(ow, anywhere)
+  local ok, why = partnerReachable(ow, anywhere)
   if not ok then return false, why end
   if (CoopManager.partner.healthy or 0) <= 0 then return false, "Partner has no POKéMON" end
   return true
@@ -1476,9 +1479,12 @@ CoopManager.markTrainerBeaten = markTrainerBeaten
 function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
   local BattleState = require("src.battle.BattleState")
   local wild = msg.battleKind == "wild"
+  local tower = type(msg.tower) == "table"
   local p2Battle
   if wild then
     p2Battle = require("src.coop.CoopWild").guestBattle(game, msg)
+  elseif tower then
+    p2Battle = require("src.coop.CoopTower").guestBattle(game, msg, chosenMons)
   else
     p2Battle = BattleState.newTrainer(game, msg.oppClass, msg.partyIndex or 1)
   end
@@ -1492,7 +1498,8 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
   -- white the guest out while the host's scene carries on
   if msg.canLose then p2Battle.canLose = true end
 
-  p2Battle.onFinish = function(result)
+  -- a tower battle keeps its own finish (the partner's team handed back)
+  if not tower then p2Battle.onFinish = function(result)
     local cOw = game.overworld or ow2
     if wild then
       if cOw and cOw.afterBattle then pcall(cOw.afterBattle, cOw, result, p2Battle) end
@@ -1512,7 +1519,7 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
        and cOw.map and mapsMatch(cOw.map.id, msg.mapId) then
       pcall(cOw.runGen2AfterBattle, cOw, msg.trainerIndex)
     end
-  end
+  end end
 
   local CoopBattle = require("src.coop.CoopBattle")
   CoopBattle.initBattle(p2Battle, chosenMons, msg.localMons, CoopManager.partner, msg.seed, msg.inviteId)
@@ -1540,10 +1547,16 @@ function CoopManager.onBattleInviteReceived(ow, msg)
   -- game.  Busy is simply a "no" the inviter fights solo on.
   if CoopManager.isLocalInBattle(ow2) then decline("in_battle") return end
   if not overworldIdle(game, ow2) then decline("busy") return end
-  if not (ow2 and ow2.map and mapsMatch(ow2.map.id, msg.mapId or CoopManager.partner.map)) then
+  local towerCap = type(msg.tower) == "table" and tonumber(msg.tower.cap) or nil
+  if not towerCap and not (ow2 and ow2.map and mapsMatch(ow2.map.id, msg.mapId or CoopManager.partner.map)) then
     decline("far") return
   end
   if healthyCount(game.save) <= 0 then decline("no_mons") return end
+  local eligible = (game.save and game.save.party) or {}
+  if towerCap then
+    eligible = require("src.coop.CoopTower").eligible(eligible, towerCap)
+    if #eligible == 0 then decline("no_mons") return end
+  end
 
   local pName = string.upper(CoopManager.partner.name or "PARTNER")
   local tName = string.upper(msg.trainerName or "TRAINER")
@@ -1552,8 +1565,7 @@ function CoopManager.onBattleInviteReceived(ow, msg)
   inviteModal = CoopBattleInviteModal.new(game, pName, tName, function()
     CoopManager.activeInviteModal = nil
     local CoopBattleSelect = require("src.coop.CoopBattleSelect")
-    local party = (game.save and game.save.party) or {}
-    game.stack:push(CoopBattleSelect.new(game, party, function(chosenMons)
+    game.stack:push(CoopBattleSelect.new(game, eligible, function(chosenMons)
       if not CoopManager.isConnected() then
         CoopManager.showStatus("Partner link lost", 2.5)
         return
@@ -1911,7 +1923,8 @@ function CoopManager.promptCoopBattle(ow, battle, opts)
     return CoopManager.hostBigBattle(ow, battle, opts, big)
   end
 
-  local ok, why = CoopManager.partnerAvailable(ow)
+  local tower = battle.battleTower == true
+  local ok, why = CoopManager.partnerAvailable(ow, tower)
   if not ok then
     if why ~= "Partner is far away" then CoopManager.showStatus(why .. ". Solo!", 2.5) end
     return false
@@ -1919,6 +1932,8 @@ function CoopManager.promptCoopBattle(ow, battle, opts)
 
   local game = getGame(ow)
   if not (game and game.stack) then return false end
+  local towerInfo = tower and require("src.coop.CoopTower").inviteInfo(game, battle) or nil
+  if tower and not towerInfo then return false end
   local CoopBattleSelect = require("src.coop.CoopBattleSelect")
   local CoopWaitModal = require("src.coop.CoopWaitModal")
   local save = game.save
@@ -1935,7 +1950,7 @@ function CoopManager.promptCoopBattle(ow, battle, opts)
         return
       end
       game.stack:push(CoopBattleSelect.new(game, save.party, function(chosenMons)
-        local stillOk, whyNot = CoopManager.partnerAvailable(ow)
+        local stillOk, whyNot = CoopManager.partnerAvailable(ow, tower)
         if not stillOk then
           CoopManager.showStatus(whyNot .. ". Solo!", 2.5)
           solo()
@@ -1975,6 +1990,7 @@ function CoopManager.promptCoopBattle(ow, battle, opts)
           mapId = battle.mapId or (ow and ow.map and ow.map.id),
           seed = seed,
           localMons = wired,
+          tower = towerInfo,
         })
       end, solo))
     end },
