@@ -71,7 +71,7 @@ local MODULES = {
   "src.coop.CoopLink", "src.coop.CoopLog", "src.coop.CoopManager",
   "src.coop.CoopMenu", "src.coop.CoopNet", "src.coop.CoopNewGame",
   "src.coop.CoopStory", "src.coop.CoopWaitModal", "src.coop.CoopDex",
-  "src.coop.CoopRejoin",
+  "src.coop.CoopRejoin", "src.coop.CoopGift",
   "src.battle.DoublesAI", "src.render.MicroFont", "src.follow.FollowMon",
 }
 for _, name in ipairs(MODULES) do

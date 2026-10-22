@@ -108,6 +108,10 @@ function CoopMenu:connectedRows(ow)
       menu:close()
       if ow then CoopManager.useItemOnPartner(menu.game, ow) end
     end },
+    { label = "MYSTERY GIFT", run = function()
+      menu:close()
+      require("src.coop.CoopGift").ask(menu.game, ow)
+    end },
     { label = "POKéDEX", run = function()
       require("src.coop.CoopDex").open(menu.game)
     end },

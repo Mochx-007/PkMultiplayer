@@ -172,4 +172,49 @@ do
   T.check(snap and snap.sh == true, "a shiny follower tells the partner it is shiny")
 end
 
+-- ---------------------------------------------------------------------
+-- MYSTERY GIFT: ask, yes, one gift each way, once a day
+-- ---------------------------------------------------------------------
+
+do
+  local CoopGift = require("src.coop.CoopGift")
+  Data.items.FIX_POTION.key = "BERRY"
+  save.coopGifts = nil
+  save.inventory = {}
+  local boxes = {}
+  local TextBox = package.loaded["src.render.TextBox"]
+  package.loaded["src.render.TextBox"] = { new = function(_, text, onDone, opts)
+    boxes[#boxes + 1] = { text = text, opts = opts } return { text = text } end }
+  local idleFn = CoopManager.overworldIdle
+  CoopManager.overworldIdle = function() return true end
+  local ow = { map = { id = "ROUTE_29" } }
+  sent = {}
+  CoopGift.ask(game, ow)
+  local req = sentOf("coop_gift_req")[1]
+  T.check(req ~= nil, "MYSTERY GIFT asks the partner")
+  -- the partner's game (same process: its handlers, its save)
+  CoopManager.dispatch(ow, req)
+  local prompt = boxes[#boxes]
+  T.check(prompt and prompt.opts and prompt.opts.choice, "the partner is asked yes or no")
+  T.check(prompt.text:match("^[^\n]+\n(.*)$") and #prompt.text:match("\n(.*)$") <= 18, "the question fits the text box")
+  save.coopGifts = nil -- the asker's save is the same table here
+  prompt.opts.choice(true)
+  local reply = sentOf("coop_gift_reply")[1]
+  T.check(reply and reply.ok and reply.item == "BERRY", "a yes sends a gift back with it")
+  save.coopGifts = nil
+  CoopManager.dispatch(ow, reply)
+  local give = sentOf("coop_gift_give")[1]
+  T.check(give and give.item == "BERRY", "the asker sends one too")
+  T.check((save.inventory.FIX_POTION or 0) == 1, "the gift lands in the BAG")
+  CoopManager.dispatch(ow, give)
+  T.check((save.inventory.FIX_POTION or 0) == 2, "...on both sides")
+  T.check(CoopGift.swappedToday(save), "the swap is written down for today")
+  local before = #sentOf("coop_gift_req")
+  CoopGift.ask(game, ow)
+  T.check(#sentOf("coop_gift_req") == before and boxes[#boxes].text:find("today"), "once a day per partner")
+  package.loaded["src.render.TextBox"] = TextBox
+  CoopManager.overworldIdle = idleFn
+  game.stack = newStack()
+end
+
 T.finish("co-op extras")

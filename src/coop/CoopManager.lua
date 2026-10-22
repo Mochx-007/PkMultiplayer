@@ -120,6 +120,7 @@ CoopManager.lobby = nil
 CoopManager.FEATURES = {
   "src.coop.CoopDex",
   "src.coop.CoopRejoin",
+  "src.coop.CoopGift",
 }
 CoopManager.render = nil
 
