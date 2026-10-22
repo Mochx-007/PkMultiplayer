@@ -217,4 +217,55 @@ do
   game.stack = newStack()
 end
 
+-- ---------------------------------------------------------------------
+-- SOUL LINK: first catches bound by area, fainting together
+-- ---------------------------------------------------------------------
+
+do
+  local SL = require("src.coop.CoopSoulLink")
+  save.soulLinks = nil
+  CoopManager.setRule("soulLink", true)
+  local m1 = { species = A, hp = 20 }
+  local m2 = { species = B, hp = 20 }
+  local m3 = { species = C, hp = 20 }
+  save.party = { m1, m2 }
+  save.box = { m3 }
+  sent = {}
+  SL.onCaught(game, m1, "UNION_CAVE_B1F")
+  local c = sentOf("coop_soul_catch")[1]
+  T.check(c and c.area == "UNION_CAVE" and m1.soulId == c.id, "the first catch in an area is bound (floors are one area)")
+  SL.onCaught(game, m2, "UNION_CAVE_1F")
+  T.check(m2.soulId == nil and #sentOf("coop_soul_catch") == 1, "the second catch there is free")
+  SL.onCaught(game, m3, "ROUTE_30")
+  recv({ type = "coop_soul_catch", area = "UNION_CAVE", id = "p1", species = C })
+  recv({ type = "coop_soul_catch", area = "ROUTE_30", id = "p2", species = A })
+  T.check(save.soulLinks.UNION_CAVE.theirs == "p1", "the partner's catch there is its pair")
+
+  m1.hp = 0
+  sent = {}
+  SL.watch(game)
+  local d = sentOf("coop_soul_dead")[1]
+  T.check(d and d.area == "UNION_CAVE" and save.soulLinks.UNION_CAVE.dead, "a faint breaks the bond and tells the partner")
+  m1.hp = 25
+  SL.watch(game)
+  T.check(m1.hp == 0, "...and a Pokemon Center can't bring it back")
+
+  recv({ type = "coop_soul_dead", area = "ROUTE_30", id = "p2" })
+  T.check(m3.hp == 0 and m3.soulDead, "the partner's faint takes ours with it, even in the PC")
+
+  m2.hp = 0
+  sent = {}
+  SL.watch(game)
+  T.check(#sentOf("coop_soul_dead") == 0, "an unbound Pokemon's faint is only a faint")
+
+  -- notes compared on a new link: a faint while apart
+  save.soulLinks.LAKE = { mine = "x9", mineSpecies = B }
+  local m4 = { species = B, hp = 30, soulId = "x9" }
+  save.party[3] = m4
+  recv({ type = "coop_soul_sync", links = { { area = "LAKE", id = "q", species = A, dead = true } } })
+  T.check(m4.hp == 0 and save.soulLinks.LAKE.theirs == "q", "a faint told late still counts")
+  CoopManager.setRule("soulLink", false)
+  save.party, save.box = {}, {}
+end
+
 T.finish("co-op extras")

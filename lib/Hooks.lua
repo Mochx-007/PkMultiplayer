@@ -219,6 +219,18 @@ Hooks.modules["src.battle.BattleState"] = function(BattleState)
   -- the ball and the hit hung in the air beside the mon.  What the rigid move
   -- leaves over at each mark is handed to the animation player as a per-side
   -- nudge (Gen2AnimPlayer:objectOffset below), in the layer's own pixels.
+  -- SOUL LINK: the first catch in an area is bound to the partner's
+  -- (src/coop/CoopSoulLink.lua)
+  wrap(BattleState, "BattleState", "storeCaughtMon", function(storeCaughtMon)
+    return function(self, ...)
+      local mon = self.enemy and self.enemy.mon
+      local a, b, c = storeCaughtMon(self, ...)
+      local SL = package.loaded["src.coop.CoopSoulLink"]
+      if SL and SL.onCaught and mon then pcall(SL.onCaught, self.game, mon) end
+      return a, b, c
+    end
+  end)
+
   wrap(BattleState, "BattleState", "drawAnimLayer", function(drawAnimLayer)
     return function(self, ...)
       local ap = self.animPlayer

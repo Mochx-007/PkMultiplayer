@@ -121,6 +121,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopDex",
   "src.coop.CoopRejoin",
   "src.coop.CoopGift",
+  "src.coop.CoopSoulLink",
 }
 CoopManager.render = nil
 

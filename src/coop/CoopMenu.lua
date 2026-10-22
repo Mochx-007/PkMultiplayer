@@ -118,6 +118,12 @@ function CoopMenu:connectedRows(ow)
     { label = "SHARE DEX " .. onOff(CoopManager.shareDex), run = function()
       CoopManager.setRule("shareDex", not CoopManager.shareDex)
     end },
+    { label = "SOUL LINK " .. onOff(CoopManager.soulLink), run = function()
+      CoopManager.setRule("soulLink", not CoopManager.soulLink)
+    end },
+    { label = "SOUL LINKS", run = function()
+      require("src.coop.CoopSoulLink").open(menu.game)
+    end },
     { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
       CoopManager.setRule("storySync", not CoopManager.storySync)
     end },
