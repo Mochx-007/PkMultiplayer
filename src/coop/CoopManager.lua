@@ -124,6 +124,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopSoulLink",
   "src.coop.CoopGear",
   "src.coop.CoopWild",
+  "src.coop.CoopCompat",
 }
 CoopManager.render = nil
 

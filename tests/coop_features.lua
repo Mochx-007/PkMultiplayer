@@ -361,4 +361,23 @@ do
   CoopManager.setRule("wildTogether", false)
 end
 
+-- ---------------------------------------------------------------------
+-- DRAMATICSHAPES: a co-op double is not staged in 3D (its HUD is cut for
+-- singles); singles still are
+-- ---------------------------------------------------------------------
+
+do
+  local staged, finished = 0, 0
+  local OB = { begin = function() staged = staged + 1 return true end,
+               finish = function() finished = finished + 1 end }
+  rawset(_G, "__DRAMATIC_SHAPE_V", { require = function(name) return name == "OverworldBattle" and OB or nil end })
+  CoopManager.update(nil, 1 / 60)
+  T.check(OB.begin({}, { coopDouble = true }) == false and staged == 0, "a co-op double stays on the classic screen")
+  T.check(OB.begin({}, { kind = "wild" }) == true and staged == 1, "a single is still staged")
+  local wrapped = OB.begin
+  CoopManager.update(nil, 1 / 60)
+  T.check(OB.begin == wrapped, "wrapped once")
+  rawset(_G, "__DRAMATIC_SHAPE_V", nil)
+end
+
 T.finish("co-op extras")
