@@ -121,8 +121,11 @@ function CoopMenu:connectedRows(ow)
     { label = "SHARE DEX " .. onOff(CoopManager.shareDex), run = function()
       CoopManager.setRule("shareDex", not CoopManager.shareDex)
     end },
-    { label = "WILD TOGETHER " .. onOff(CoopManager.wildTogether), run = function()
+    { label = "TEAM UP WILD " .. onOff(CoopManager.wildTogether), run = function()
       CoopManager.setRule("wildTogether", not CoopManager.wildTogether)
+    end },
+    { label = "LINK DAYCARE " .. onOff(CoopManager.shareDayCare), run = function()
+      CoopManager.setRule("shareDayCare", not CoopManager.shareDayCare)
     end },
     { label = "SOUL LINK " .. onOff(CoopManager.soulLink), run = function()
       CoopManager.setRule("soulLink", not CoopManager.soulLink)

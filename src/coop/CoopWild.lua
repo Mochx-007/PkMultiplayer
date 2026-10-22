@@ -22,7 +22,7 @@ local CoopWild = {}
 CoopWild.NEAR = 8
 CoopWild.TEAM = 3
 
-CoopManager.addRule("wildTogether", "WILD TOGETHER", false)
+CoopManager.addRule("wildTogether", "TEAM UP WILD", false)
 
 local function send(msg)
   if CoopManager.connected and CoopManager.net then CoopManager.net:send(msg) end

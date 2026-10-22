@@ -315,6 +315,45 @@ Hooks.modules["src.battle.Gen2AnimPlayer"] = function(Gen2AnimPlayer)
   end)
 end
 
+-- SHARE DAY CARE (src/coop/CoopDayCare.lua): inside the breeding sums -- and
+-- only there -- the empty pen holds a copy of the partner's Pokemon
+local function dayCareShare()
+  return package.loaded["src.coop.CoopDayCare"]
+end
+
+Hooks.modules["src.pokemon.DayCare"] = function(DayCare)
+  wrap(DayCare, "DayCare", "mon", function(mon)
+    return function(save, which, ...)
+      local S = dayCareShare()
+      if S and S.scope ~= nil then return S.mon(mon, save, which) end
+      return mon(save, which, ...)
+    end
+  end)
+  for _, name in ipairs({ "pair", "parents", "compatibility", "eggSpecies", "inheritMoves", "step" }) do
+    wrap(DayCare, "DayCare", name, function(original)
+      return function(data, save, ...)
+        local S = dayCareShare()
+        if not (S and type(save) == "table" and save.coopDayCareMate) then
+          return original(data, save, ...)
+        end
+        return S.within(save, original, data, save, ...)
+      end
+    end)
+  end
+end
+
+Hooks.modules["src.pokemon.Gen2Breeding"] = function(Breeding)
+  wrap(Breeding, "Gen2Breeding", "inheritDVs", function(inheritDVs)
+    return function(data, save, egg, ...)
+      local S = dayCareShare()
+      if not (S and type(save) == "table" and save.coopDayCareMate) then
+        return inheritDVs(data, save, egg, ...)
+      end
+      return S.within(save, inheritDVs, data, save, egg, ...)
+    end
+  end)
+end
+
 -- WILD TOGETHER: four Pokemon out, no BALL can be aimed
 Hooks.modules["src.inventory.ItemEffects"] = function(ItemEffects)
   wrap(ItemEffects, "ItemEffects", "use", function(use)

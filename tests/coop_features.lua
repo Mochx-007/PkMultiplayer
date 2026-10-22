@@ -440,4 +440,37 @@ do
   CoopManager.connected = true
 end
 
+-- ---------------------------------------------------------------------
+-- LINK DAYCARE: the partner's boarder breeds with ours -- in the sums only
+-- ---------------------------------------------------------------------
+
+do
+  local DayCare = require("src.pokemon.DayCare")
+  require("src.pokemon.Gen2Breeding")
+  require("src.coop.CoopDayCare")
+  local own = { species = A, level = 20, otId = 1, dvs = { attack = 15, defense = 3, speed = 3, special = 3 } }
+  save.daycare = { breed = { [DayCare.MAN] = { mon = own } } }
+  CoopManager.setRule("shareDayCare", true)
+  sent = {}
+  CoopManager.update(nil, 1 / 60)
+  local ann = sentOf("coop_daycare")[1]
+  T.check(ann and ann.mon and ann.mon.species == A, "our boarder is told to the partner")
+  recv({ type = "coop_daycare", mon = { species = A, level = 22, otId = 2,
+                                        dvs = { attack = 0, defense = 9, speed = 9, special = 9 } } })
+  T.check(save.coopDayCareMate and save.coopDayCareMate.mon.otId == 2, "theirs is kept as a copy")
+  T.check(DayCare.mon(save, DayCare.LADY) == nil, "the DAY-CARE's own talk never sees it")
+  local seen
+  local CoopDayCare = package.loaded["src.coop.CoopDayCare"]
+  CoopDayCare.within(save, function() seen = DayCare.mon(save, DayCare.LADY) end)
+  T.check(seen and seen.otId == 2, "the breeding sums do")
+  local fakeData = { pokemon = { [A] = { eggGroups = { "MONSTER" }, genderRatio = 127 } } }
+  local a, b = DayCare.pair(fakeData, save)
+  T.check(a == own and b and b.otId == 2, "DayCare.pair sees the pair")
+  T.check(DayCare.compatibility(fakeData, save) == 4, "same species, different trainers: the best match")
+  recv({ type = "coop_daycare" })
+  T.check(save.coopDayCareMate == nil and DayCare.pair(fakeData, save) == nil, "theirs withdrawn: no pair")
+  CoopManager.setRule("shareDayCare", false)
+  save.daycare = nil
+end
+
 T.finish("co-op extras")

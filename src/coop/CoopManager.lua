@@ -127,6 +127,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopCompat",
   "src.coop.CoopWatch",
   "src.coop.CoopVisit",
+  "src.coop.CoopDayCare",
 }
 CoopManager.render = nil
 
