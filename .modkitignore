@@ -12,6 +12,7 @@ tests/drivers/coop_smoke.lua
 tests/drivers/follow_smoke.lua
 tests/drivers/wild_together.lua
 tests/drivers/watch_smoke.lua
+tests/drivers/visit_smoke.lua
 tests/foreign_wrapper.lua
 tests/foreign_wrapper_pre.lua
 tests/patch_scope.lua

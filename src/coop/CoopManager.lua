@@ -126,6 +126,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopWild",
   "src.coop.CoopCompat",
   "src.coop.CoopWatch",
+  "src.coop.CoopVisit",
 }
 CoopManager.render = nil
 
@@ -274,6 +275,7 @@ local function localSpriteId(p)
   if p.onBike and p.bikeId then return p.bikeId end
   return p.walkId or p.spriteId
 end
+CoopManager.localSpriteId = localSpriteId
 
 local function localHopY(p)
   if p and p.hopFrames and p.hopFrames > 0 then
@@ -679,6 +681,7 @@ local function applyPartnerPalette(npc)
     pcall(npc.sprite.setPalette, npc.sprite, P2_BLUE_PALETTE, "p2_gold_blue")
   end
 end
+CoopManager.applyPartnerPalette = applyPartnerPalette
 
 local function knownSprite(game, id)
   local sprites = game and game.data and game.data.sprites
@@ -2009,6 +2012,11 @@ CoopManager.LIVE_EVERY = 0.05
 CoopManager.LIVE_SETTLE = 0.35
 CoopManager.TYPING_STALE = 5
 CoopManager.chatLog = {}
+-- name -> fn(sender, text, own): every line the chat shows (visitors hear it)
+CoopManager.chatListeners = {}
+-- set while this game VISITS someone else's (src/coop/CoopVisit.lua): the
+-- chat goes there instead of to a co-op partner
+CoopManager.chatRoute = nil
 CoopManager.partnerTyping = nil
 CoopManager.partnerLiveN = 0
 CoopManager.liveOut = { n = 0, at = -1 }
@@ -2026,7 +2034,7 @@ CoopManager.coopBattleOnTop = coopBattleOnTop
 function CoopManager.openChat(game, ow)
   game = game or getGame(ow)
   if not game or not game.stack then return end
-  if not CoopManager.connected then return end
+  if not (CoopManager.connected or CoopManager.chatRoute) then return end
 
   local top = stackTop(game)
   if top and (top.isChatBox or top.isTextBox or (top.lines ~= nil and top.page ~= nil)) then
@@ -2107,6 +2115,9 @@ function CoopManager.sendChat(text)
 
   local game = getGame()
   local sender = CoopManager.getLocalPlayerName(game) or "ME"
+  if not CoopManager.connected and CoopManager.chatRoute then
+    pcall(CoopManager.chatRoute, sender, text)
+  end
   if CoopManager.connected and CoopManager.net then
     -- the counter goes with it: the partner drops the typing line for good
     live.n = live.n + 1
@@ -2135,6 +2146,7 @@ function CoopManager.onChatReceived(sender, text, own, n)
     own = own and true or false,
   }
   if not own then playSound(getGame(), "Menu") end
+  for _, fn in pairs(CoopManager.chatListeners) do pcall(fn, sender, text, own) end
 end
 
 function CoopManager.interact(game, ow)
@@ -2717,6 +2729,7 @@ local function drawPill(bx, by, bw, bh)
   love.graphics.setColor(1, 1, 1, 1)
   love.graphics.rectangle("fill", bx + 1, by + 1, bw - 2, bh - 2)
 end
+CoopManager.drawPill = drawPill
 
 function CoopManager.drawEmoteBubble(cx, cy, sym)
   local MicroFont = require("src.render.MicroFont")
@@ -2739,6 +2752,7 @@ local function screenPoint(ow, wx, wy)
   end
   return fx, fy
 end
+CoopManager.screenPoint = screenPoint
 
 -- A small arrow on the screen edge pointing at a partner who is on this map
 -- (or a connected one) but out of view.
@@ -2819,8 +2833,18 @@ function CoopManager.drawWorld(ow)
     require("src.coop.CoopEmotes").draw(getGame(ow), CoopManager.localEmote, sx, sy,
                                         2.5 - (CoopManager.localEmoteTimer or 0))
   end
+  for name, fn in pairs(CoopManager.worldDrawers) do
+    local ok, err = pcall(fn, ow)
+    if not ok and CoopManager.drawerErr ~= err then
+      CoopManager.drawerErr = err
+      CoopLog.error("MANAGER", "world drawer " .. name .. " failed: " .. tostring(err))
+    end
+  end
   love.graphics.setColor(1, 1, 1, 1)
 end
+
+-- name -> fn(ow): feature modules drawing on the world (visitors' names)
+CoopManager.worldDrawers = {}
 
 -- word-wrap to `width` characters, at most `maxLines` lines
 local function wrap(text, width, maxLines)

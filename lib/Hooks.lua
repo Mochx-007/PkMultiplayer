@@ -494,7 +494,7 @@ Hooks.modules["src.world.OverworldController"] = function(OverworldState)
       local held
       for _, name in ipairs({ "npcs", "entities" }) do
         for _, e in ipairs(self[name] or {}) do
-          if type(e) == "table" and (e.pkmFollower or e.pkmFollowerRemote) then
+          if type(e) == "table" and (e.pkmFollower or e.pkmFollowerRemote or e.coopVisitor) then
             held = held or { npcs = {}, entities = {} }
             table.insert(held[name], e)
           end

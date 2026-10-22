@@ -181,7 +181,20 @@ function CoopMenu:offlineRows()
       menu.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED TO HOST"
     end
   end }
-  rows[#rows + 1] = { label = "JOIN", run = function() menu.stage = "addrEntry" end }
+  rows[#rows + 1] = { label = "JOIN", run = function()
+    menu.visitMode = nil
+    menu.stage = "addrEntry"
+  end }
+  -- a third (fourth, fifth...) player walks the host's world: src/coop/CoopVisit.lua
+  local CoopVisit = require("src.coop.CoopVisit")
+  if CoopVisit.visiting() then
+    rows[#rows + 1] = { label = "STOP VISITING", run = function() CoopVisit.leave() end }
+  else
+    rows[#rows + 1] = { label = "VISIT", run = function()
+      menu.visitMode = true
+      menu.stage = "addrEntry"
+    end }
+  end
   rows[#rows + 1] = { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
     CoopManager.storySync = not CoopManager.storySync
   end }
@@ -247,6 +260,13 @@ function CoopMenu:update(dt)
       moveCursor(self, -1)
     elseif input:wasPressed("right") then
       moveCursor(self, 1)
+    elseif input:wasPressed("a") and self.visitMode then
+      local ok, why = require("src.coop.CoopVisit").visit(digitsIP(self.addr), self.port + 1)
+      if ok then
+        self:close()
+      else
+        self.errorMsg = why or "FAILED TO CONNECT"
+      end
     elseif input:wasPressed("a") then
       local targetIP = digitsIP(self.addr)
       self.errorMsg = nil
@@ -373,7 +393,7 @@ function CoopMenu:draw()
 
   elseif self.stage == "addrEntry" then
     Font.drawBox(0, 0, 20, 4)
-    Font.draw("ENTER HOST IP", 8, 12)
+    Font.draw(self.visitMode and "VISIT: HOST IP" or "ENTER HOST IP", 8, 12)
     Font.drawBox(0, 4, 20, 14)
     for i = 1, 12 do
       local octet = math.floor((i - 1) / 3)
@@ -386,9 +406,9 @@ function CoopMenu:draw()
     for octet = 1, 3 do
       Font.draw(".", 16 + octet * 33 - 6, 52)
     end
-    Font.draw("PORT: " .. self.port, 8, 80)
+    Font.draw("PORT: " .. (self.visitMode and (self.port + 1) or self.port), 8, 80)
     Font.draw("D-PAD: EDIT IP", 8, 96)
-    Font.draw("A:JOIN  B:BACK", 8, 128)
+    Font.draw(self.visitMode and "A:VISIT  B:BACK" or "A:JOIN  B:BACK", 8, 128)
 
   elseif self.stage == "joining" then
     Font.drawBox(0, 0, 20, 6)

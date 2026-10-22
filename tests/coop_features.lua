@@ -412,4 +412,32 @@ do
   T.check(CoopWatch.frame and CoopWatch.frame.text == "x", "the watcher keeps the latest frame")
 end
 
+-- ---------------------------------------------------------------------
+-- VISITORS: the guest hears of them; every chat line goes on to them
+-- ---------------------------------------------------------------------
+
+do
+  local CoopVisit = require("src.coop.CoopVisit")
+  recv({ type = "coop_visitors", list = { { id = "v1", name = "ASH", map = "ROUTE_29", px = 16, py = 32 } } })
+  T.check(CoopVisit.others.v1 and CoopVisit.others.v1.name == "ASH", "the guest learns who is visiting")
+  local out = {}
+  local peer = { send = function(_, s) out[#out + 1] = s end }
+  CoopVisit.server = { visitors = { [peer] = { id = 1, name = "ASH" } }, enetHost = {} }
+  CoopManager.onChatReceived("TOBY", "HEY", false)
+  T.check(#out == 1 and out[1]:find("HEY"), "a chat line goes on to the visitors")
+  CoopVisit.relaying = true
+  CoopManager.onChatReceived("ASH", "MINE", false)
+  CoopVisit.relaying = false
+  T.check(#out == 1, "...but a visitor's own line is not echoed back by the listener")
+  CoopVisit.server = nil
+  CoopVisit.others = {}
+  local routed
+  CoopManager.connected = false
+  CoopManager.chatRoute = function(sender, text) routed = text end
+  CoopManager.sendChat("VISITING")
+  T.check(routed == "VISITING", "a visitor's chat goes to the host's world")
+  CoopManager.chatRoute = nil
+  CoopManager.connected = true
+end
+
 T.finish("co-op extras")
