@@ -31,7 +31,7 @@ return function(game)
     m.moves = { { id = "TACKLE", pp = 35 } }
     table.insert(save.party, m)
   end
-  U.teleport(game, "ROUTE_29", role == "host" and 10 or 12, 8, "down")
+  U.teleport(game, "ROUTE29", role == "host" and 10 or 12, 8, "down")
 
   if role == "host" then
     check(CoopManager.host(port), "hosting on " .. port)
@@ -41,11 +41,17 @@ return function(game)
   end
   local linked = false
   for _ = 1, 60 * 30 do
-    if CoopManager.isConnected() and CoopManager.partner.map == "ROUTE_29" then linked = true break end
+    if CoopManager.isConnected() and CoopManager.partner.map == "ROUTE29" then linked = true break end
     U.wait(1)
   end
   check(linked, "linked, both on Route 29")
   U.wait(60)
+  local Music = require("src.core.Music")
+  -- a teleport does not start the map's music; the overworld's own call does
+  Music.playMap(game.data, "ROUTE29")
+  U.wait(30)
+  local mapSong = Music.current()
+  U.log(role .. ": music on the map: " .. tostring(mapSong))
 
   local function topBattle()
     local top = game.stack:top()
@@ -148,6 +154,10 @@ return function(game)
     U.wait(3)
   end
   check(back, "both got away, back on Route 29")
+  local t0 = love.timer.getTime()
+  while love.timer.getTime() - t0 < 4 do U.wait(1) end
+  U.log(role .. ": music after the battle: " .. tostring(Music.current()))
+  check(Music.current() == mapSong, "the map's music came back")
   U.shot(game, DIR .. "/4_back.png")
   U.wait(120)
   U.log(("%s done: %d failures"):format(role, fails))

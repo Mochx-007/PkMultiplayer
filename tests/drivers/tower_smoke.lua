@@ -36,7 +36,7 @@ return function(game)
   for _, t in ipairs(team) do
     table.insert(save.party, Pokemon.new(game.data, ("SPECIES_%03d"):format(t[1]), t[2]))
   end
-  U.teleport(game, role == "host" and "ROUTE_29" or "NEW_BARK_TOWN", role == "host" and 10 or 6, 8, "down")
+  U.teleport(game, role == "host" and "ROUTE29" or "NEW_BARK_TOWN", role == "host" and 10 or 6, 8, "down")
 
   if role == "host" then
     check(CoopManager.host(port), "hosting")

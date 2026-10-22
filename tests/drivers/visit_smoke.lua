@@ -34,7 +34,7 @@ return function(game)
   save.player.name = names[role]
   table.insert(save.party, Pokemon.new(game.data, "SPECIES_025", 10))
   local x = ({ host = 10, guest = 12, visitor = 14 })[role]
-  U.teleport(game, "ROUTE_29", x, 8, "down")
+  U.teleport(game, "ROUTE29", x, 8, "down")
 
   if role == "host" then
     check(CoopManager.host(port), "hosting on " .. port)

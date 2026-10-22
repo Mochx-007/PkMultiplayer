@@ -23,7 +23,7 @@ return function(game)
   local m = Pokemon.new(game.data, role == "host" and "SPECIES_155" or "SPECIES_158", 12)
   m.moves = { { id = "TACKLE", pp = 35 } }
   table.insert(save.party, m)
-  U.teleport(game, "ROUTE_29", role == "host" and 10 or 30, 8, "down")
+  U.teleport(game, "ROUTE29", role == "host" and 10 or 30, 8, "down")
 
   if role == "host" then
     check(CoopManager.host(port), "hosting on " .. port)
@@ -33,7 +33,7 @@ return function(game)
   end
   local linked = false
   for _ = 1, 60 * 30 do
-    if CoopManager.isConnected() and CoopManager.partner.map == "ROUTE_29" then linked = true break end
+    if CoopManager.isConnected() and CoopManager.partner.map == "ROUTE29" then linked = true break end
     U.wait(1)
   end
   check(linked, "linked")
