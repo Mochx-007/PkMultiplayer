@@ -304,6 +304,43 @@ Hooks.modules["src.battle.Gen2AnimPlayer"] = function(Gen2AnimPlayer)
   end)
 end
 
+-- THE PARTNER IN THE POKéGEAR (src/coop/CoopGear.lua): first in the phone
+-- book, a call opens the chat, and a blinking mark on the town map
+local function gear()
+  local ok, G = pcall(require, "src.coop.CoopGear")
+  return ok and G or nil
+end
+
+Hooks.modules["src.ui.PokegearMenu"] = function(PokegearMenu)
+  wrap(PokegearMenu, "PokegearMenu", "contacts", function(contacts)
+    return function(self, ...)
+      local list = contacts(self, ...)
+      local G = gear()
+      if not G then return list end
+      local ok, out = pcall(G.contacts, list)
+      return ok and out or list
+    end
+  end)
+  wrap(PokegearMenu, "PokegearMenu", "startPhoneCall", function(startPhoneCall)
+    return function(self, entry, ...)
+      local G = gear()
+      if G then
+        local ok, handled = pcall(G.call, self, entry)
+        if ok and handled then return end
+      end
+      return startPhoneCall(self, entry, ...)
+    end
+  end)
+  wrap(PokegearMenu, "PokegearMenu", "drawMap", function(drawMap)
+    return function(self, ...)
+      local a, b = drawMap(self, ...)
+      local G = gear()
+      if G then pcall(G.drawMap, self) end
+      return a, b
+    end
+  end)
+end
+
 Hooks.modules["src.battle.TrainerAI"] = function(TrainerAI)
   -- a MEAN LOOK / SPIDER WEB (or a Gen 2 WRAP) holds the foe in as well
   wrap(TrainerAI, "TrainerAI", "switchAction", function(switchAction)

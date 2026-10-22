@@ -268,4 +268,35 @@ do
   save.party, save.box = {}, {}
 end
 
+-- ---------------------------------------------------------------------
+-- POKéGEAR: the partner in the phone book, a call opens the chat
+-- ---------------------------------------------------------------------
+
+do
+  local PokegearMenu = require("src.ui.PokegearMenu")
+  local menu = setmetatable({ game = game }, { __index = PokegearMenu })
+  save.g2Phone = nil
+  local list = menu:contacts()
+  T.check(list[1] and list[1].coopPartner and list[1].name == "TOBY", "the partner heads the phone book")
+  T.check(list[2] and list[2].name ~= "TOBY", "...above the usual numbers")
+  T.check(not PokegearMenu.canDeleteContact(list[1]), "the partner's number can't be deleted")
+  local opened
+  local openChat = CoopManager.openChat
+  CoopManager.openChat = function() opened = true end
+  local TextBox = package.loaded["src.render.TextBox"]
+  local after
+  package.loaded["src.render.TextBox"] = { new = function(_, text, onDone) after = onDone return { text = text } end }
+  sent = {}
+  menu:startPhoneCall(list[1])
+  T.check(#sentOf("coop_call") == 1, "CALL rings the partner")
+  if after then after() end
+  T.check(opened, "...and opens the chat")
+  package.loaded["src.render.TextBox"] = TextBox
+  CoopManager.openChat = openChat
+  game.stack = newStack()
+  CoopManager.connected = false
+  T.check(not menu:contacts()[1].coopPartner, "unlinked, the phone book is the cartridge's")
+  CoopManager.connected = true
+end
+
 T.finish("co-op extras")

@@ -252,7 +252,7 @@ function Screen:draw()
     Font.draw(num .. " " .. fit(def and def.name or id, 10), 24, y)
     if self.top + i == self.cursor then Font.drawCode(0xED, 12, y) end
   end
-  Font.draw("<> SWAP   B:BACK", 8, 128)
+  Font.draw("SEL:SWAP  B:BACK", 8, 128)
 end
 
 CoopDex.Screen = Screen
