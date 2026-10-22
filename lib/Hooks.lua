@@ -210,6 +210,86 @@ Hooks.modules["src.battle.BattleState"] = function(BattleState)
       return update(self, dt, ...)
     end
   end)
+
+  -- MOVE ANIMATIONS LAND ON THE MONS IN A STAGED (3D) BATTLE.  DramaticShapes
+  -- stands the two Pokemon on the map and carries the whole effects layer
+  -- along as one rigid piece: moved to the pair's midpoint and scaled to their
+  -- spacing.  Once the camera swings the line between the two marks no longer
+  -- runs the way the Game Boy's did, so both ends of an animation missed --
+  -- the ball and the hit hung in the air beside the mon.  What the rigid move
+  -- leaves over at each mark is handed to the animation player as a per-side
+  -- nudge (Gen2AnimPlayer:objectOffset below), in the layer's own pixels.
+  wrap(BattleState, "BattleState", "drawAnimLayer", function(drawAnimLayer)
+    return function(self, ...)
+      local ap = self.animPlayer
+      if ap then ap.stageNudge = Hooks.stageNudge(self) end
+      return drawAnimLayer(self, ...)
+    end
+  end)
+end
+
+-- DramaticShapes' arena module, when that mod is running (its loader
+-- publishes its namespace for drivers; V.require answers from its cache)
+local function stagedArena()
+  local V = rawget(_G, "__DRAMATIC_SHAPE_V")
+  if type(V) ~= "table" or type(V.require) ~= "function" then return nil end
+  local ok, OB = pcall(V.require, "OverworldBattle")
+  if ok and type(OB) == "table" and OB.geometry and OB.animScale then return OB end
+  return nil
+end
+
+-- { player = {dx, dy}, enemy = {dx, dy} } or nil: how far each side's mark
+-- is from where the rigid move puts its authored slot, divided back through
+-- that move's scale.  The same numbers OverworldBattle's drawAnimLayer uses.
+function Hooks.stageNudge(battle)
+  local shot = battle.dramaticShapeShot
+  if not (shot and shot.player and shot.enemy) then return nil end
+  if battle.gen3Layout and battle:gen3Layout() then return nil end
+  local OB = stagedArena()
+  if not OB then return nil end
+  local okG, geom = pcall(OB.geometry, battle)
+  local a = okG and geom and geom.anchor
+  if not (a and a.player and a.enemy) then return nil end
+  local px, py = shot.player[1], shot.player[2]
+  if OB.backPinned and OB.backPinned() then px, py = a.player[1], a.player[2] end
+  local ex, ey = shot.enemy[1], shot.enemy[2]
+  local okK, k = pcall(OB.animScale, shot, px, py, a)
+  if not okK or type(k) ~= "number" or k <= 0 then return nil end
+  local cx, cy = (ex + px) / 2, (ey + py) / 2
+  local ax, ay = (a.enemy[1] + a.player[1]) / 2, (a.enemy[2] + a.player[2]) / 2
+  local function rest(tx, ty, sx, sy)
+    -- the slot after the rigid move: c + k * (slot - midpoint)
+    local mx, my = cx + k * (sx - ax), cy + k * (sy - ay)
+    return { (tx - mx) / k, (ty - my) / k }
+  end
+  return {
+    player = rest(px, py, a.player[1], a.player[2]),
+    enemy = rest(ex, ey, a.enemy[1], a.enemy[2]),
+  }
+end
+
+-- The single layout's two pic centres in OAM space, as the co-op patch of
+-- Gen2AnimPlayer has them: an object takes the nudge of the side it is on,
+-- blended only across the middle fifth of the way between the two.
+local PLAYER_PIC_OAM = { 40, 88 }
+local ENEMY_PIC_OAM = { 132, 44 }
+
+Hooks.modules["src.battle.Gen2AnimPlayer"] = function(Gen2AnimPlayer)
+  wrap(Gen2AnimPlayer, "Gen2AnimPlayer", "objectOffset", function(objectOffset)
+    return function(self, x, y, ...)
+      local dx, dy = objectOffset(self, x, y, ...)
+      local n = self.stageNudge
+      if not n then return dx, dy end
+      local px, py = PLAYER_PIC_OAM[1], PLAYER_PIC_OAM[2]
+      local vx, vy = ENEMY_PIC_OAM[1] - px, ENEMY_PIC_OAM[2] - py
+      local t = ((x - px) * vx + (y - py) * vy) / (vx * vx + vy * vy)
+      local u = (t - 0.4) / 0.2
+      if u < 0 then u = 0 elseif u > 1 then u = 1 end
+      u = u * u * (3 - 2 * u)
+      local p, e = n.player, n.enemy
+      return dx + p[1] + (e[1] - p[1]) * u, dy + p[2] + (e[2] - p[2]) * u
+    end
+  end)
 end
 
 Hooks.modules["src.battle.TrainerAI"] = function(TrainerAI)
