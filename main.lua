@@ -70,7 +70,8 @@ local MODULES = {
   "src.coop.CoopBattleSelect", "src.coop.CoopChatBox", "src.coop.CoopEmotes",
   "src.coop.CoopLink", "src.coop.CoopLog", "src.coop.CoopManager",
   "src.coop.CoopMenu", "src.coop.CoopNet", "src.coop.CoopNewGame",
-  "src.coop.CoopStory", "src.coop.CoopWaitModal",
+  "src.coop.CoopStory", "src.coop.CoopWaitModal", "src.coop.CoopDex",
+  "src.coop.CoopRejoin",
   "src.battle.DoublesAI", "src.render.MicroFont", "src.follow.FollowMon",
 }
 for _, name in ipairs(MODULES) do
@@ -87,15 +88,23 @@ end
 if mod.options and mod.options.define then
   pcall(mod.options.define, mod.options, {
     { key = "follower", type = "toggle", label = "POKEMON FOLLOWS YOU", default = true },
+    { key = "autoReconnect", type = "toggle", label = "AUTO RECONNECT", default = true },
   })
 end
+-- a switch in the MODS panel, read each time (true when the panel is absent);
+-- the co-op modules read it through package.loaded, which needs none of them
+-- loaded yet
+local function option(key)
+  if not (mod.options and mod.options.get) then return true end
+  local ok, on = pcall(mod.options.get, mod.options, key)
+  return not ok or on ~= false
+end
+package.loaded["pkmultiplayer.options"] = { on = option }
 do
   local FollowMon = require("src.follow.FollowMon")
   FollowMon.enabled = function()
     if generation ~= 2 then return false end
-    if not (mod.options and mod.options.get) then return true end
-    local ok, on = pcall(mod.options.get, mod.options, "follower")
-    return not ok or on ~= false
+    return option("follower")
   end
 end
 

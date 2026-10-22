@@ -36,12 +36,41 @@ CoopManager.partnerHeals = false   -- Sinnoh partner rule: heal after every won 
 
 -- shared rules: changed by either player, applied on both
 local SHARED_RULES = { storySync = true, partnerHeals = true }
+local RULE_LABELS = { storySync = "STORY SYNC", partnerHeals = "PARTNER HEALS" }
+-- rule name -> function(value, fromPartner) run after it changes
+local ruleChanged = {}
 function CoopManager.setRule(name, value, fromPartner)
   if not SHARED_RULES[name] then return end
   CoopManager[name] = value and true or false
   if not fromPartner and CoopManager.connected and CoopManager.net then
     CoopManager.net:send({ type = "coop_rules", name = name, value = CoopManager[name] })
   end
+  if ruleChanged[name] then pcall(ruleChanged[name], CoopManager[name], fromPartner) end
+end
+
+-- A feature module's own shared rule: same wire message, same "host's rules
+-- are the session's rules" on linking, shown under `label`.
+function CoopManager.addRule(name, label, default, onChange)
+  SHARED_RULES[name] = true
+  RULE_LABELS[name] = label
+  ruleChanged[name] = onChange
+  if CoopManager[name] == nil then CoopManager[name] = default and true or false end
+end
+
+function CoopManager.ruleLabel(name)
+  return RULE_LABELS[name] or name
+end
+
+-- Per-frame work of the feature modules, run while linked:
+-- fn(dt, game, ow).  Each runs under pcall; a failure is logged once.
+CoopManager.tickers = {}
+function CoopManager.onTick(name, fn)
+  CoopManager.tickers[name] = fn
+end
+-- ...and the work that runs linked or not (picking a link back up)
+CoopManager.idleTickers = {}
+function CoopManager.onIdleTick(name, fn)
+  CoopManager.idleTickers[name] = fn
 end
 
 local function freshPartner()
@@ -87,6 +116,11 @@ CoopManager.statusTimer = 0
 CoopManager.pendingBattleInvite = nil
 CoopManager.activeInviteModal = nil
 CoopManager.lobby = nil
+-- feature modules loaded at the end of this file (they register into it)
+CoopManager.FEATURES = {
+  "src.coop.CoopDex",
+  "src.coop.CoopRejoin",
+}
 CoopManager.render = nil
 
 local PARTNER_NPC_INDEX = 988
@@ -150,6 +184,7 @@ local function getGame(ow)
   if ok and type(G) == "table" then return G end
   return _G.Game
 end
+CoopManager.getGame = getGame
 
 local function stackTop(game)
   local stack = game and game.stack
@@ -487,6 +522,9 @@ local function completeHandshake(ow)
   local wasConnected = CoopManager.connected
   CoopManager.connected = true
   if not wasConnected then
+    -- each fresh link counts up: a feature that sent its state "once per
+    -- link" sends it again
+    CoopManager.linkSerial = (CoopManager.linkSerial or 0) + 1
     local okCB, CoopBattle = pcall(require, "src.coop.CoopBattle")
     if okCB and CoopBattle and CoopBattle.onLinkRestored then pcall(CoopBattle.onLinkRestored) end
   end
@@ -2340,8 +2378,7 @@ end
 H.coop_rules = function(ow, msg)
   if SHARED_RULES[msg.name] then
     CoopManager.setRule(msg.name, msg.value == true, true)
-    local label = (msg.name == "partnerHeals") and "PARTNER HEALS" or "STORY SYNC"
-    CoopManager.showStatus(label .. (msg.value and " ON" or " OFF") .. " (partner)", 2.5)
+    CoopManager.showStatus(CoopManager.ruleLabel(msg.name) .. (msg.value and " ON" or " OFF") .. " (partner)", 2.5)
   end
 end
 
@@ -2538,9 +2575,20 @@ local function tickTimers(dt)
   tickLive()
 end
 
+local function runTickers(list, dt, game, ow)
+  for name, fn in pairs(list) do
+    local ok, err = pcall(fn, dt, game, ow)
+    if not ok and CoopManager.tickerErr ~= err then
+      CoopManager.tickerErr = err
+      CoopLog.error("MANAGER", "ticker " .. name .. " failed: " .. tostring(err))
+    end
+  end
+end
+
 function CoopManager.update(ow, dt)
   dt = math.min(dt or 0.016, 0.25)
   tickTimers(dt)
+  runTickers(CoopManager.idleTickers, dt, getGame(ow), ow)
   local net = CoopManager.net
   if not net or net.closed then
     if CoopManager.partnerNpc and ow then CoopManager.removePartnerNpc(ow) end
@@ -2598,6 +2646,7 @@ function CoopManager.update(ow, dt)
     CoopManager.updatePartnerRender(ow, dt)
     broadcastPosition(ow, dt)
   end
+  runTickers(CoopManager.tickers, dt, game, ow)
   net:flush()
 end
 
@@ -2954,6 +3003,15 @@ end
 -- Backward compatibility for single draw call
 function CoopManager.draw(ow)
   CoopManager.drawUI(ow)
+end
+
+-- the feature modules register their messages, rules and per-frame work in
+-- the tables above when they load.  They require this module back, so it is
+-- published first: `require` would otherwise see a module still loading.
+package.loaded["src.coop.CoopManager"] = CoopManager
+for _, name in ipairs(CoopManager.FEATURES or {}) do
+  local ok, err = pcall(require, name)
+  if not ok then CoopLog.error("MANAGER", "feature " .. name .. " failed to load: " .. tostring(err)) end
 end
 
 return CoopManager

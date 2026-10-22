@@ -13,6 +13,8 @@ CoopMenu.isOpaque = true
 
 local CURSOR = 0xED
 local DOWN_ARROW = 0xEE
+-- rows the linked menu shows at once (it scrolls past that)
+local VISIBLE_ROWS = 9
 
 -- The address being typed, as twelve digits (three per octet), so the
 -- cursor can walk them one by one.  Starts from this machine's own address,
@@ -106,6 +108,12 @@ function CoopMenu:connectedRows(ow)
       menu:close()
       if ow then CoopManager.useItemOnPartner(menu.game, ow) end
     end },
+    { label = "POKéDEX", run = function()
+      require("src.coop.CoopDex").open(menu.game)
+    end },
+    { label = "SHARE DEX " .. onOff(CoopManager.shareDex), run = function()
+      CoopManager.setRule("shareDex", not CoopManager.shareDex)
+    end },
     { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
       CoopManager.setRule("storySync", not CoopManager.storySync)
     end },
@@ -125,10 +133,56 @@ function CoopMenu:connectedRows(ow)
       require("src.coop.CoopEmotes").openPicker(menu.game)
     end },
     { label = "DISCONNECT", run = function()
+      require("src.coop.CoopRejoin").stop(menu.game)
       CoopManager.disconnect()
       menu.index = 1
     end },
   }
+end
+
+-- The offline menu, the same way.  RECONNECT leads it when the save
+-- remembers a link (CoopRejoin): the host listens again, the guest dials.
+function CoopMenu:offlineRows()
+  local menu = self
+  local rows = {}
+  local link = self.game.save and self.game.save.coopLink
+  if link then
+    local who = tostring(link.partner or "PARTNER"):sub(1, 6)
+    rows[#rows + 1] = { label = "RECONNECT " .. who, run = function()
+      menu.errorMsg = nil
+      if require("src.coop.CoopRejoin").try(menu.game, true) then
+        menu.stage = (link.role == "host") and "hosting" or "joining"
+      else
+        menu.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED"
+      end
+    end }
+  end
+  rows[#rows + 1] = { label = "HOST", run = function()
+    menu.errorMsg = nil
+    if CoopManager.host(menu.port) then
+      menu.stage = "hosting"
+    else
+      menu.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED TO HOST"
+    end
+  end }
+  rows[#rows + 1] = { label = "JOIN", run = function() menu.stage = "addrEntry" end }
+  rows[#rows + 1] = { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
+    CoopManager.storySync = not CoopManager.storySync
+  end }
+  rows[#rows + 1] = { label = "EMOTE", run = function()
+    menu.stage = "emotes"
+    menu.index = 1
+  end }
+  rows[#rows + 1] = { label = "EXIT", run = function() menu:close() end }
+  return rows
+end
+
+-- where an offline row sits (RECONNECT pushes the others down)
+function CoopMenu:offlineIndex(label)
+  for i, row in ipairs(self:offlineRows()) do
+    if row.label == label then return i end
+  end
+  return 1
 end
 
 function CoopMenu:update(dt)
@@ -139,7 +193,9 @@ function CoopMenu:update(dt)
 
   if self.stage == "main" then
     local isConn = CoopManager.isConnected()
-    local maxItems = isConn and #self:connectedRows(ow) or 5
+    local rows = isConn and self:connectedRows(ow) or self:offlineRows()
+    local maxItems = #rows
+    if self.index > maxItems then self.index = 1 end
 
     if input:wasPressed("down") then
       self.index = (self.index % maxItems) + 1
@@ -148,28 +204,8 @@ function CoopMenu:update(dt)
     elseif input:wasPressed("b") then
       self:close()
     elseif input:wasPressed("a") then
-      if not isConn then
-        if self.index == 1 then
-          self.errorMsg = nil
-          if CoopManager.host(self.port) then
-            self.stage = "hosting"
-          else
-            self.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED TO HOST"
-          end
-        elseif self.index == 2 then
-          self.stage = "addrEntry"
-        elseif self.index == 3 then
-          CoopManager.storySync = not CoopManager.storySync
-        elseif self.index == 4 then
-          self.stage = "emotes"
-          self.index = 1
-        elseif self.index == 5 then
-          self:close()
-        end
-      else
-        local row = self:connectedRows(ow)[self.index]
-        if row and row.run then row.run() end
-      end
+      local row = rows[self.index]
+      if row and row.run then row.run() end
     end
 
   elseif self.stage == "hosting" then
@@ -186,7 +222,7 @@ function CoopMenu:update(dt)
   elseif self.stage == "addrEntry" then
     if input:wasPressed("b") then
       self.stage = "main"
-      self.index = 2
+      self.index = self:offlineIndex("JOIN")
     elseif input:wasPressed("up") then
       turnDigit(self, 1)
     elseif input:wasPressed("down") then
@@ -209,7 +245,7 @@ function CoopMenu:update(dt)
     if input:wasPressed("b") then
       CoopManager.disconnect()
       self.stage = "main"
-      self.index = 2
+      self.index = self:offlineIndex("JOIN")
     elseif CoopManager.isConnected() then
       self.stage = "main"
       self.index = 1
@@ -265,10 +301,17 @@ function CoopMenu:draw()
       Font.draw("CO-OP LINK", 8, 8)
       Font.draw("YOUR IP:", 8, 16)
       Font.draw(fit(CoopNet.zeroTierIP() or CoopNet.lanIP(), 18), 8, 24)
-      rows = { "HOST", "JOIN", "STORY SYNC " .. (CoopManager.storySync and "ON" or "OFF"), "EMOTE", "EXIT" }
+      rows = {}
+      for i, row in ipairs(self:offlineRows()) do rows[i] = row.label end
     else
       Font.draw("LINK: " .. fit(partner.name or "PARTNER", 8), 8, 8)
       Font.draw("AREA:", 8, 16)
+      -- the round trip, right-aligned on the AREA line
+      local ms = CoopManager.net and tonumber(CoopManager.net.rttMs)
+      if ms then
+        local text = ("%dMS"):format(math.min(9999, ms))
+        Font.draw(text, 152 - #text * 8, 16)
+      end
       Font.draw(fit(CoopManager.mapLabel and CoopManager.mapLabel(partner.map) or partner.map, 18), 8, 24)
       rows = {}
       for i, row in ipairs(self:connectedRows(findOverworld(self.game))) do rows[i] = row.label end
@@ -278,12 +321,25 @@ function CoopMenu:draw()
     -- Nine rows at 9px fill the box exactly, from under its top border (48)
     -- to the footer (128); B closes the menu, so there is no RESUME row.
     -- Labels are 16 characters at most: x = 24 to the border at 152.
+    -- More than nine rows scroll, a window of nine kept around the cursor,
+    -- with the down arrow while more rows wait below (the font has no up
+    -- arrow; the cursor shows the way back).
     local pitch = (#rows > 8) and 9 or ((#rows > 6) and 10 or 12)
     local top = 48
-    for i, r in ipairs(rows) do
-      Font.draw(r, 24, top + (i - 1) * pitch)
+    local first = 1
+    if #rows > VISIBLE_ROWS then
+      self.scroll = self.scroll or 1
+      if self.index < self.scroll then self.scroll = self.index end
+      if self.index > self.scroll + VISIBLE_ROWS - 1 then self.scroll = self.index - VISIBLE_ROWS + 1 end
+      first = self.scroll
     end
-    Font.drawCode(CURSOR, 12, top + (self.index - 1) * pitch)
+    for i = first, math.min(#rows, first + VISIBLE_ROWS - 1) do
+      Font.draw(rows[i], 24, top + (i - first) * pitch)
+    end
+    Font.drawCode(CURSOR, 12, top + (self.index - first) * pitch)
+    if first + VISIBLE_ROWS - 1 < #rows then
+      Font.drawCode(DOWN_ARROW, 144, top + (VISIBLE_ROWS - 1) * pitch)
+    end
     Font.draw("A:OK  B:BACK", 8, 128)
 
   elseif self.stage == "hosting" then
