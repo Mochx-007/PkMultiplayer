@@ -108,6 +108,9 @@ function CoopMenu:connectedRows(ow)
       menu:close()
       if ow then CoopManager.useItemOnPartner(menu.game, ow) end
     end },
+    { label = "WATCH " .. tostring(CoopManager.partner.name or "PARTNER"):upper():sub(1, 7), run = function()
+      require("src.coop.CoopWatch").open(menu.game)
+    end },
     { label = "MYSTERY GIFT", run = function()
       menu:close()
       require("src.coop.CoopGift").ask(menu.game, ow)

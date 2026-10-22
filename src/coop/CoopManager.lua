@@ -125,6 +125,7 @@ CoopManager.FEATURES = {
   "src.coop.CoopGear",
   "src.coop.CoopWild",
   "src.coop.CoopCompat",
+  "src.coop.CoopWatch",
 }
 CoopManager.render = nil
 

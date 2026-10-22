@@ -380,4 +380,36 @@ do
   rawset(_G, "__DRAMATIC_SHAPE_V", nil)
 end
 
+-- ---------------------------------------------------------------------
+-- WATCH: the partner's battle, as it happens
+-- ---------------------------------------------------------------------
+
+do
+  local CoopWatch = require("src.coop.CoopWatch")
+  local BattleState = require("src.battle.BattleState")
+  local Pokemon = require("src.pokemon.Pokemon")
+  save.party = { Pokemon.new(Data, A, 10) }
+  game.stack = newStack()
+  local battle = BattleState.newWild(game, B, 7)
+  battle.current = { text = "Wild one\nappeared!" }
+  game.stack:push(battle)
+  sent = {}
+  CoopManager.update(nil, 1 / 60)
+  T.check(#sentOf("coop_watch_frame") == 0, "nothing goes out while nobody watches")
+  recv({ type = "coop_watch", on = true })
+  CoopManager.update(nil, 1 / 60)
+  local f = sentOf("coop_watch_frame")[1]
+  T.check(f and f.foe and f.foe.species == B and f.mine and f.mine.species == A, "watched: the battle goes out")
+  T.check(f and f.text == "Wild one appeared!", "...with the line on the text box")
+  game.stack:pop()
+  sent = {}
+  CoopWatch.timer = 0
+  CoopManager.update(nil, 1 / 60)
+  f = sentOf("coop_watch_frame")[1]
+  T.check(f and f.idle, "out of battle: 'not in a battle'")
+  recv({ type = "coop_watch", on = false })
+  recv({ type = "coop_watch_frame", foe = { species = B }, mine = { species = A }, text = "x" })
+  T.check(CoopWatch.frame and CoopWatch.frame.text == "x", "the watcher keeps the latest frame")
+end
+
 T.finish("co-op extras")
