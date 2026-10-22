@@ -158,29 +158,43 @@ for name in pairs(work) do
   end
 end
 
-if next(STATE.pending) and not STATE.searcher then
-  STATE.searcher = function(name)
-    if not STATE.pending[name] then return nil end
-    for i = 1, #loaders do
-      local searcher = loaders[i]
-      if searcher ~= STATE.searcher then
-        local loader, extra = searcher(name)
-        if type(loader) == "function" then
-          return function(...)
-            local module = loader(...)
-            STATE.pending[name] = nil
-            local real = module
-            if real == nil then real = package.loaded[name] end
-            STATE.apply(name, real)
-            return module
-          end, extra
+-- There is only ever one such searcher in the process, kept on `package`:
+-- going back to the launcher takes STATE out of _G again, but package.loaders
+-- is not among what the engine puts back, so a searcher per load would pile
+-- up, and each one, skipping only itself, would call the others, which call
+-- it back -- a stack overflow on the first require of a pending module.  The
+-- one searcher patches for whichever load's STATE is current.
+local searcher = rawget(package, "__pkmultiplayer_searcher")
+if not searcher then
+  local busy = {}
+  searcher = function(name)
+    local S = rawget(_G, "__PKMULTIPLAYER")
+    if busy[name] or not (S and S.pending[name] and S.apply) then return nil end
+    busy[name] = true
+    local ok, found, extra = pcall(function()
+      for i = 1, #loaders do
+        local other = loaders[i]
+        if other ~= searcher then
+          local loader, x = other(name)
+          if type(loader) == "function" then return loader, x end
         end
       end
-    end
-    return nil
+    end)
+    busy[name] = nil
+    if not ok then error(found, 0) end
+    if not found then return nil end
+    return function(...)
+      local module = found(...)
+      S.pending[name] = nil
+      local real = module
+      if real == nil then real = package.loaded[name] end
+      S.apply(name, real)
+      return module
+    end, extra
   end
+  rawset(package, "__pkmultiplayer_searcher", searcher)
   -- after package.preload (whose own entries win), before the engine's
-  table.insert(loaders, 2, STATE.searcher)
+  table.insert(loaders, 2, searcher)
 end
 STATE.apply = applyTo
 

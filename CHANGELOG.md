@@ -3,6 +3,19 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.3.1
+
+Same link protocol (8): plays with 1.2.0 and 1.3.0.
+
+### Fixed
+
+- **Stack overflow after going back to the launcher.**  Loading the game a
+  second time in the same session left two of the mod's module searchers in
+  `package.loaders`, each calling the other; the first engine module still
+  waiting for its patch (typically the battle code, when a fight started)
+  crashed the game.  There is now one searcher for the whole process, and it
+  patches for the load that is current.
+
 ## 1.3.0
 
 Works with a 1.2.0 partner (same link protocol, 8); they just do not see
