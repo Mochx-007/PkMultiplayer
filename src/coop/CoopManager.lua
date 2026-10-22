@@ -1499,27 +1499,29 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
   if msg.canLose then p2Battle.canLose = true end
 
   -- a tower battle keeps its own finish (the partner's team handed back)
-  if not tower then p2Battle.onFinish = function(result)
-    local cOw = game.overworld or ow2
-    if wild then
-      if cOw and cOw.afterBattle then pcall(cOw.afterBattle, cOw, result, p2Battle) end
-      return
-    end
-    if result == "win" then
-      markTrainerBeaten(game, cOw, msg)
-      awardLeaderBadge(game, msg.oppClass)
-      if cOw and cOw.checkVictoryRewards and msg.oppClass then
-        pcall(cOw.checkVictoryRewards, cOw, msg.oppClass, msg.partyIndex)
+  if not tower then
+    p2Battle.onFinish = function(result)
+      local cOw = game.overworld or ow2
+      if wild then
+        if cOw and cOw.afterBattle then pcall(cOw.afterBattle, cOw, result, p2Battle) end
+        return
+      end
+      if result == "win" then
+        markTrainerBeaten(game, cOw, msg)
+        awardLeaderBadge(game, msg.oppClass)
+        if cOw and cOw.checkVictoryRewards and msg.oppClass then
+          pcall(cOw.checkVictoryRewards, cOw, msg.oppClass, msg.partyIndex)
+        end
+      end
+      if cOw and cOw.afterBattle then
+        pcall(cOw.afterBattle, cOw, result, p2Battle)
+      end
+      if result == "win" and cOw and cOw.runGen2AfterBattle and msg.trainerIndex
+         and cOw.map and mapsMatch(cOw.map.id, msg.mapId) then
+        pcall(cOw.runGen2AfterBattle, cOw, msg.trainerIndex)
       end
     end
-    if cOw and cOw.afterBattle then
-      pcall(cOw.afterBattle, cOw, result, p2Battle)
-    end
-    if result == "win" and cOw and cOw.runGen2AfterBattle and msg.trainerIndex
-       and cOw.map and mapsMatch(cOw.map.id, msg.mapId) then
-      pcall(cOw.runGen2AfterBattle, cOw, msg.trainerIndex)
-    end
-  end end
+  end
 
   local CoopBattle = require("src.coop.CoopBattle")
   CoopBattle.initBattle(p2Battle, chosenMons, msg.localMons, CoopManager.partner, msg.seed, msg.inviteId)
