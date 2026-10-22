@@ -19,6 +19,13 @@
 -- two cells behind), never blocks the player, and snaps back when it ends up
 -- more than six cells away. Hidden on the bike and while surfing.
 --
+-- A SHINY ONE SPARKLES every few seconds (the partner sees it too).
+--
+-- IT FINDS THINGS, the way HGSS's does: a friendly one (happiness 100+)
+-- sometimes picks something up as you walk -- a "!" over it says so -- and
+-- hands it over when you talk to it.  What it finds grows with your badges.
+-- The find waits in the save (save.pkmFollowerFind) until you take it.
+--
 -- IN CO-OP: coop_pos carries `fol` (sheet + pixel position), and the
 -- partner's copy draws it behind the partner's avatar (FollowMon.updateRemote).
 --
@@ -82,6 +89,24 @@ local function unlist(ow, flag)
   end
 end
 
+-- SHINY SPARKLE: a four-point star at two corners in turn, for a fifth of a
+-- second every SPARKLE_EVERY seconds
+FollowMon.SPARKLE_EVERY = 2.5
+local SPARKLE_CORNERS = { { 1, 1 }, { 13, 3 }, { 3, 12 }, { 12, 13 } }
+local function drawSparkle(x, y, t)
+  local phase = t % FollowMon.SPARKLE_EVERY
+  if phase > 0.4 then return end
+  local c = SPARKLE_CORNERS[(math.floor(t / FollowMon.SPARKLE_EVERY) * 2 + (phase > 0.2 and 1 or 0)) % 4 + 1]
+  local sx, sy = x + c[1], y + c[2]
+  local g = love.graphics
+  g.setColor(1, 1, 0.55, 1)
+  g.rectangle("fill", sx, sy - 2, 1, 5)
+  g.rectangle("fill", sx - 2, sy, 5, 1)
+  g.setColor(1, 1, 1, 1)
+  g.rectangle("fill", sx, sy - 1, 1, 3)
+  g.rectangle("fill", sx - 1, sy, 3, 1)
+end
+
 -- the icon's two frames, mirrored for a right turn: an icon has no facings
 local function drawIcon(self, camX, camY)
   local sprite, px, py = self:pose()
@@ -89,6 +114,13 @@ local function drawIcon(self, camX, camY)
   local t = love.timer and love.timer.getTime() or 0
   local frame = math.floor(t * (self.moving and 8 or 4)) % 2
   sprite:drawFixedFrame(px, py, camX, camY, frame, self.facing == "right")
+  local x = math.floor(px - camX)
+  local y = math.floor(py - camY) - 4
+  if self.pkmShiny then drawSparkle(x, y, t) end
+  if self.pkmFound then
+    local CM = package.loaded["src.coop.CoopManager"]
+    if CM and CM.drawEmoteBubble then pcall(CM.drawEmoteBubble, x + 8, y - 10, "!") end
+  end
 end
 
 local function makeNpc(game, ow, spriteId, x, y, facing, index, name)
@@ -184,6 +216,9 @@ function FollowMon.update(game, ow)
     npc = spawn(game, ow, spriteId)
     if not npc then return end
   end
+  local lead = FollowMon.lead(game.save)
+  npc.pkmShiny = FollowMon.isShiny(lead)
+  npc.pkmFound = game.save.pkmFollowerFind ~= nil
   local p = ow.player
   local trail = ow.pkmFollowTrail
   if not trail then
@@ -197,6 +232,7 @@ function FollowMon.update(game, ow)
   if destX ~= trail.x or destY ~= trail.y then
     npc.goalX, npc.goalY = trail.x, trail.y
     trail.x, trail.y = destX, destY
+    FollowMon.onStep(game, lead)
   end
   if npc.moving or not npc.goalX then return end
   local gx, gy = npc.goalX, npc.goalY
@@ -230,6 +266,102 @@ function FollowMon.update(game, ow)
   npc:update(ow.map, ow.entities)
 end
 
+function FollowMon.isShiny(mon)
+  if not mon then return false end
+  local ok, Pokemon = pcall(require, "src.pokemon.Pokemon")
+  if not (ok and Pokemon.isShiny) then return mon.shiny == true end
+  local okS, shiny = pcall(Pokemon.isShiny, mon)
+  return okS and shiny == true
+end
+
+-- ------------------------------------------------------------ finding
+
+-- one step in FIND_ONE_IN, for a lead this friendly or more
+FollowMon.FIND_ONE_IN = 192
+FollowMon.FIND_HAPPINESS = 100
+-- { item key, weight, badges needed }
+FollowMon.FINDS = {
+  { "POTION", 20, 0 }, { "POKE_BALL", 14, 0 }, { "BERRY", 14, 0 },
+  { "ANTIDOTE", 7, 0 }, { "PARLYZ_HEAL", 6, 0 }, { "AWAKENING", 6, 0 },
+  { "PSNCUREBERRY", 6, 0 }, { "PRZCUREBERRY", 6, 0 }, { "REPEL", 7, 0 },
+  { "ESCAPE_ROPE", 4, 0 }, { "TINYMUSHROOM", 4, 0 }, { "NUGGET", 1, 0 },
+  { "SUPER_POTION", 14, 3 }, { "GREAT_BALL", 10, 3 }, { "SUPER_REPEL", 5, 3 },
+  { "MINT_BERRY", 5, 3 }, { "ICE_BERRY", 3, 3 }, { "BURNT_BERRY", 3, 3 },
+  { "BITTER_BERRY", 3, 3 }, { "PEARL", 3, 3 }, { "STARDUST", 3, 3 }, { "ETHER", 3, 3 },
+  { "HYPER_POTION", 8, 6 }, { "ULTRA_BALL", 6, 6 }, { "MAX_REPEL", 3, 6 },
+  { "REVIVE", 3, 6 }, { "FULL_HEAL", 4, 6 }, { "MIRACLEBERRY", 2, 6 },
+  { "GOLD_BERRY", 3, 6 }, { "BIG_PEARL", 1, 6 }, { "STAR_PIECE", 1, 6 },
+  { "BIG_MUSHROOM", 1, 6 },
+}
+
+-- item key -> this cartridge's item id (ITEM_018 for POTION in Gold)
+local function itemByKey(data, key)
+  for id, def in pairs((data and data.items) or {}) do
+    if type(def) == "table" and def.key == key then return id end
+  end
+  return nil
+end
+FollowMon.itemByKey = itemByKey
+
+local function badgeCount(game)
+  local ok, n = pcall(function()
+    return require("src.inventory.Badges").count(game.data, game.save)
+  end)
+  return ok and tonumber(n) or 0
+end
+
+function FollowMon.rollFind(game, rand)
+  rand = rand or math.random
+  local badges = badgeCount(game)
+  local pool, total = {}, 0
+  for _, f in ipairs(FollowMon.FINDS) do
+    if badges >= f[3] and itemByKey(game.data, f[1]) then
+      pool[#pool + 1] = f
+      total = total + f[2]
+    end
+  end
+  if total <= 0 then return nil end
+  local r = rand() * total
+  for _, f in ipairs(pool) do
+    r = r - f[2]
+    if r <= 0 then return f[1] end
+  end
+  return pool[#pool][1]
+end
+
+function FollowMon.onStep(game, lead, rand)
+  local save = game and game.save
+  if not (save and lead) or save.pkmFollowerFind then return end
+  if (tonumber(lead.happiness) or 70) < FollowMon.FIND_HAPPINESS then return end
+  rand = rand or math.random
+  if rand(FollowMon.FIND_ONE_IN) ~= 1 then return end
+  local key = FollowMon.rollFind(game, rand)
+  if key then save.pkmFollowerFind = { key = key } end
+end
+
+-- A on it with a find waiting: it hands it over
+local function giveFind(game, name)
+  local save = game.save
+  local find = save.pkmFollowerFind
+  local id = find and itemByKey(game.data, find.key)
+  if not id then
+    save.pkmFollowerFind = nil
+    return nil
+  end
+  local def = game.data.items[id]
+  local itemName = (def and def.name) or find.key
+  local Strings = require("src.core.Strings")
+  local ok, added = pcall(function()
+    return require("src.inventory.Bag").add(save, id, 1, game.data)
+  end)
+  if ok and added ~= false then
+    save.pkmFollowerFind = nil
+    pcall(function() require("src.core.Sound").play(game.data, "Item") end)
+    return Strings("%s found\n%s!"):format(name, itemName)
+  end
+  return Strings("%s found\n%s...\fBut the BAG\nis full."):format(name, itemName)
+end
+
 -- A on it: it turns to you, cries, and says how it feels (Gen 2 friendship)
 function FollowMon.talk(game, ow, npc)
   local mon = FollowMon.lead(game.save)
@@ -238,6 +370,14 @@ function FollowMon.talk(game, ow, npc)
   local def = game.data.pokemon and game.data.pokemon[mon.species]
   local name = mon.nickname or (def and def.name) or "It"
   pcall(function() require("src.core.Sound").playCry(game.data, mon.species) end)
+  if game.save.pkmFollowerFind then
+    local found = giveFind(game, name)
+    if found then
+      local TextBox = require("src.render.TextBox")
+      game.stack:push(TextBox.new(game, found))
+      return true
+    end
+  end
   local h = tonumber(mon.happiness) or 70
   local Strings = require("src.core.Strings")
   -- a Gen 2 line is 18 characters and a name up to 10, so the name and at
@@ -260,7 +400,7 @@ function FollowMon.snapshot(ow)
   local npc = find(ow)
   if not npc or npc.hidden then return nil end
   return { s = npc.spriteName, px = npc.px, py = npc.py, f = npc.facing,
-           m = npc.moving and true or nil }
+           m = npc.moving and true or nil, sh = npc.pkmShiny or nil }
 end
 
 FollowMon.remote = nil -- { x, y, mapId } smoothed draw position
@@ -320,6 +460,7 @@ function FollowMon.updateRemote(game, ow, dt, info, ox, oy)
   npc.cellX, npc.cellY = math.floor((rx + 8) / 16), math.floor((ry + 8) / 16)
   npc.facing = info.f or "down"
   npc.moving = moved > 0 or info.m == true
+  npc.pkmShiny = info.sh == true
 end
 
 return FollowMon

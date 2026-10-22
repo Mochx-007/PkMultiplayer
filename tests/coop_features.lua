@@ -131,4 +131,45 @@ do
   CoopManager.net.closed = nil
 end
 
+-- ---------------------------------------------------------------------
+-- THE FOLLOWER finds things, and sparkles when shiny
+-- ---------------------------------------------------------------------
+
+do
+  local FollowMon = require("src.follow.FollowMon")
+  Data.items.FIX_POTION.key = "POTION"
+  Data.items.FIX_BALL.key = "POKE_BALL"
+  save.pkmFollowerFind = nil
+  local lead = { species = A, happiness = 50, hp = 10 }
+  local always = function(n) if n then return 1 end return 0.01 end
+  FollowMon.onStep(game, lead, always)
+  T.check(save.pkmFollowerFind == nil, "an unfriendly lead finds nothing")
+  lead.happiness = 150
+  FollowMon.onStep(game, lead, function(n) if n then return 2 end return 0.01 end)
+  T.check(save.pkmFollowerFind == nil, "most steps find nothing")
+  FollowMon.onStep(game, lead, always)
+  T.check(save.pkmFollowerFind and save.pkmFollowerFind.key == "POTION", "a friendly lead finds something")
+  T.check(FollowMon.rollFind(game, function() return 0.99 end) == "POKE_BALL",
+    "only what this cartridge has, and nothing that needs badges")
+  FollowMon.onStep(game, lead, function(n) if n then return 1 end return 0.99 end)
+  T.check(save.pkmFollowerFind.key == "POTION", "one find at a time")
+
+  local shown
+  local TextBox = package.loaded["src.render.TextBox"]
+  package.loaded["src.render.TextBox"] = { new = function(_, text) shown = text return { text = text } end }
+  save.party = { lead }
+  save.inventory = save.inventory or {}
+  FollowMon.talk(game, { player = {} }, { facePlayer = function() end })
+  package.loaded["src.render.TextBox"] = TextBox
+  game.stack:pop()
+  T.check((save.inventory.FIX_POTION or 0) >= 1 and save.pkmFollowerFind == nil, "A on it hands the find over")
+  T.check(shown and shown:find("found") ~= nil, "...and says so")
+
+  local snap
+  local ow = { npcs = { { pkmFollower = true, spriteName = "SPRITE_MON_001", px = 0, py = 0,
+                          facing = "down", pkmShiny = true } } }
+  snap = FollowMon.snapshot(ow)
+  T.check(snap and snap.sh == true, "a shiny follower tells the partner it is shiny")
+end
+
 T.finish("co-op extras")
