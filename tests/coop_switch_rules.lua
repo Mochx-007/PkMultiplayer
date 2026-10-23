@@ -201,6 +201,27 @@ do
   fainted.hp = savedHp
 end
 
+-- a switch hides and poofs only its own slot, not the partner's too
+do
+  local hb = setup(3131, 20, { "FIXMON_A", "FIXMON_B", "FIXMON_C" }, { "FIXMON_C", "FIXMON_A", "FIXMON_B" })
+  local function poofAt()
+    for _, e in ipairs(hb.queue) do if e.anim == "POOF_ANIM" then return e.targetPosition end end
+  end
+  for _, case in ipairs({ { P.PLAYER_LEFT, hb.coopChosenMons[2], "the host's" },
+                          { P.PLAYER_RIGHT, hb.ally.party[2], "the partner's" } }) do
+    local pos, mon, who = case[1], case[2], case[3]
+    hb.queue, hb.nextInsert = {}, 0
+    local other = hb:battlerAt(pos == P.PLAYER_LEFT and P.PLAYER_RIGHT or P.PLAYER_LEFT)
+    local incoming = hb:switchPlayerInto(pos, mon)
+    T.check(incoming and hb:slotSendingOut(incoming), who .. " switch: the incoming Pokemon waits for its poof")
+    T.check(not hb:slotSendingOut(other), who .. " switch: the other player's Pokemon stays on screen")
+    T.check(not hb:sideArriving(true, 0) or hb:growInScale(hb.player) ~= nil,
+            who .. " switch: the side is not 'arriving' as a whole")
+    T.check(poofAt() == pos, who .. " switch: the poof lands on that slot (" .. tostring(poofAt()) .. ")")
+    hb.sendingOut, hb.sendingOutSlot = false, nil
+  end
+end
+
 -- ---------------------------------------------------------------------
 -- WRAP holds you: "can't be recalled!"
 -- ---------------------------------------------------------------------

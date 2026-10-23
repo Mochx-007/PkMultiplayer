@@ -3,6 +3,24 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha.2
+
+Plays with 1.4.1-alpha.1 (same link protocol, 11): only how a co-op double
+looks changed.
+
+### Fixed
+
+- **A switch no longer drags your partner's Pokemon along.**  While one
+  player's new Pokemon was on its way out, the whole side was hidden -- the
+  partner's Pokemon and both HUDs -- and the partner's then came back in the
+  same grow-in, as if it had been sent out too.  Now only the switching slot
+  empties, the poof lands on it (on the partner's side as well), and the
+  other Pokemon stays put.
+- **The foe's two Pokemon come out one at a time**, each with its own cry
+  (and its own sparkle, if shiny), instead of both in the same frame.
+- **The partner's HUD waits for the partner's ball** in the intro, instead of
+  showing before "TOBY sent out ...".
+
 ## 1.4.1-alpha.1
 
 **Both players need 1.4.1-alpha.1** (link protocol 11: a 1.4.1-alpha partner
