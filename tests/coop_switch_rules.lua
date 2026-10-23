@@ -32,6 +32,9 @@ Data.moves.FIX_SPLASHY = { id = "FIX_SPLASHY", index = 91, name = "FIX SPLASHY",
                            power = 0, accuracy = 100, pp = 40, effect = "SPLASH_EFFECT" }
 Data.moves.FIX_SLAM = { id = "FIX_SLAM", index = 92, name = "FIX SLAM", type = "NORMAL",
                         power = 120, accuracy = 100, pp = 10, effect = "NO_ADDITIONAL_EFFECT" }
+Data.moves.FIX_SHIELD = { id = "FIX_SHIELD", index = 93, name = "FIX SHIELD", type = "NORMAL",
+                          power = 0, accuracy = 100, pp = 10, effect = "PROTECT_EFFECT",
+                          target = 0x10 }
 
 local P = BattleState.POS
 
@@ -273,6 +276,7 @@ end
 do
   local hb = setup(7373, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
   local foe = foeMoves(hb, P.OPPONENT_LEFT, { "FIX_TACKLE", "FIX_SPLASHY" })
+  foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_SPLASHY" })  -- so the KO is this foe's to take
   local weak = hb:battlerAt(P.PLAYER_RIGHT)
   weak.mon.hp = 2
   local move, target = DoublesAI.choose(hb, foe, foe.curMoves)
@@ -305,6 +309,113 @@ do
   local _, t2 = DoublesAI.choose(hb, f2, f2.curMoves)
   T.check(t1 == l, "the first foe takes the KO on the weakened Pokemon")
   T.check(t2 == r, "the second foe aims at the other Pokemon instead of piling on")
+end
+
+-- they gang up on a Pokemon neither could knock out alone
+do
+  local hb = setup(4141, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  local f1 = foeMoves(hb, P.OPPONENT_LEFT, { "FIX_TACKLE" })
+  local f2 = foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_TACKLE" })
+  local l, r = hb:battlerAt(P.PLAYER_LEFT), hb:battlerAt(P.PLAYER_RIGHT)
+  local tackle = Data.moves.FIX_TACKLE
+  local d1 = DoublesAI.estimate(hb, f1, r, tackle, false)
+  local d2 = DoublesAI.estimate(hb, f2, r, tackle, false)
+  r.mon.hp = math.max(d1, d2) + 1            -- one TACKLE is not enough...
+  T.check(d1 + d2 >= r.mon.hp, "fixture: two TACKLEs finish it")
+  r.curStats.hp = 999                         -- ...and a sliver of its bar, so a lone hit
+                                              -- looks better spent on l
+  local dl = DoublesAI.estimate(hb, f1, l, tackle, false) + DoublesAI.estimate(hb, f2, l, tackle, false)
+  T.check(dl < l.mon.hp, "fixture: l survives both")
+  DoublesAI.beginTurn(hb)
+  local _, t1 = DoublesAI.choose(hb, f1, f1.curMoves)
+  local _, t2 = DoublesAI.choose(hb, f2, f2.curMoves)
+  T.check(t1 == r and t2 == r, "both foes hit the Pokemon only the two of them can finish")
+end
+
+-- the dangerous Pokemon goes first, not just the frail one
+do
+  local hb = setup(5252, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  local f1 = foeMoves(hb, P.OPPONENT_LEFT, { "FIX_TACKLE" })
+  foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_SPLASHY" })
+  local l, r = hb:battlerAt(P.PLAYER_LEFT), hb:battlerAt(P.PLAYER_RIGHT)
+  foeMoves(hb, P.PLAYER_LEFT, { "FIX_SLAM" })     -- hits hard
+  foeMoves(hb, P.PLAYER_RIGHT, { "FIX_SPLASHY" }) -- harmless
+  l.mon.hp, r.mon.hp = 1, 2                   -- the harmless one even has more to take
+  DoublesAI.beginTurn(hb)
+  local _, t1 = DoublesAI.choose(hb, f1, f1.curMoves)
+  T.check(t1 == l, "the foe knocks out the threat over the harmless one")
+end
+
+-- PROTECT when it is about to be knocked out first, and its partner is there
+do
+  local hb = setup(6363, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  local f1 = foeMoves(hb, P.OPPONENT_LEFT, { "FIX_SHIELD", "FIX_TACKLE" })
+  foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_TACKLE" })
+  local l, r = hb:battlerAt(P.PLAYER_LEFT), hb:battlerAt(P.PLAYER_RIGHT)
+  foeMoves(hb, P.PLAYER_LEFT, { "FIX_SLAM" })
+  foeMoves(hb, P.PLAYER_RIGHT, { "FIX_SPLASHY" })
+  l.curStats.speed, f1.curStats.speed = 999, 1
+  l.curStats.attack = 999
+  local cap = f1.curStats.hp
+  f1.mon.hp = math.floor(cap / 2)              -- healthy enough that the old AI never shielded
+  T.check(DoublesAI.estimate(hb, l, f1, Data.moves.FIX_SLAM, false) >= f1.mon.hp,
+          "fixture: the faster SLAM knocks it out")
+  DoublesAI.beginTurn(hb)
+  local move = DoublesAI.choose(hb, f1, f1.curMoves)
+  T.check(move and move.id == "FIX_SHIELD", "a doomed foe shields instead of trading blows")
+end
+
+-- two foes do not both put the same Pokemon to sleep
+do
+  local hb = setup(7474, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  local f1 = foeMoves(hb, P.OPPONENT_LEFT, { "FIX_HYPNO" })
+  local f2 = foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_HYPNO" })
+  DoublesAI.beginTurn(hb)
+  local _, t1 = DoublesAI.choose(hb, f1, f1.curMoves)
+  local _, t2 = DoublesAI.choose(hb, f2, f2.curMoves)
+  T.check(t1 and t2 and t1 ~= t2, "the two sleep moves go to different Pokemon")
+end
+
+-- the same plan on both copies of one battle
+do
+  local hb, gb = setup(8585, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  local picks = {}
+  for _, b in ipairs({ hb, gb }) do
+    DoublesAI.beginTurn(b)
+    local out = {}
+    for _, pos in ipairs({ P.OPPONENT_LEFT, P.OPPONENT_RIGHT }) do
+      local f = b:battlerAt(pos)
+      local mv, t = DoublesAI.choose(b, f, f.curMoves)
+      out[#out + 1] = (mv and mv.id or "-") .. "@" .. (t and t.mon.species or "-")
+    end
+    picks[#picks + 1] = table.concat(out, ",")
+  end
+  T.check(picks[1] == picks[2], "host and guest plan the very same turn (" .. picks[1] .. ")")
+end
+
+-- a hit aimed at a Pokemon that switched out lands on the one that came in
+do
+  local hb, gb, turn = setup(6161, 20, { "FIXMON_A", "FIXMON_B" }, { "FIXMON_C", "FIXMON_A" })
+  foeMoves(hb, P.OPPONENT_LEFT, { "FIX_SLAM" }); foeMoves(hb, P.OPPONENT_RIGHT, { "FIX_SLAM" })
+  foeMoves(gb, P.OPPONENT_LEFT, { "FIX_SLAM" }); foeMoves(gb, P.OPPONENT_RIGHT, { "FIX_SLAM" })
+  -- the guest's Pokemon shrugs everything off, so both foes aim at the host's lead
+  hb:battlerAt(P.PLAYER_RIGHT).curStats.defense = 999
+  gb:battlerAt(P.PLAYER_LEFT).curStats.defense = 999
+  local leaving = hb:battlerAt(P.PLAYER_LEFT).mon
+  local before = leaving.hp
+  turn(switchTo(2))
+  local incoming = hb:battlerAt(P.PLAYER_LEFT)
+  T.check(incoming.mon ~= leaving, "fixture: the host's second Pokemon came in")
+  T.check(leaving.hp == before, "the Pokemon that switched out takes nothing on the bench")
+  T.check(incoming.mon.hp < incoming.curStats.hp, "the Pokemon that came in takes the hit")
+  T.check(gb:battlerAt(P.PLAYER_RIGHT).mon.hp == incoming.mon.hp, "...the same on the guest's copy")
+
+  -- and the lookup on its own: a stale choice resolves to the slot's battler
+  local Targeting = require("src.battle.Targeting")
+  local foe = hb:battlerAt(P.OPPONENT_LEFT)
+  local stale = { mon = leaving, position = P.PLAYER_LEFT }
+  local got = Targeting.resolve(hb, foe, Data.moves.FIX_SLAM, stale)
+  T.check(got[1] == incoming, "Targeting.resolve aims at whoever stands in the chosen spot")
 end
 
 -- and both copies of a whole battle still agree with the AI choosing

@@ -53,6 +53,14 @@ return {
     "",
     "-- way round. Gen 1 and Gen 2 carry neither and fall back to GEN12_MOVE_TARGETS",
     "-- or SELECTED.",
+    "-- WHOEVER STANDS IN THAT SPOT NOW.  A target is chosen at the start of the",
+    "-- turn, as a battler -- and a switch, which goes first, puts a NEW battler",
+    "-- in the slot.  The one that was chosen is by then on the bench, still",
+    "-- alive, so nothing below turned it down: reported from co-op play, \"if my",
+    "-- partner switches and gets hit, it takes no damage\" -- the hit had landed",
+    "-- on the Pokemon that left.  The cartridge aims at the slot.",
+    "Targeting.onField = onField",
+    "",
   },
   units = {
     { name = "kindOf", kind = "local",
@@ -96,8 +104,21 @@ return {
             "  end",
           } },
       } },
+    { name = "onField", kind = "local", text = {
+      "local function onField(battle, b)",
+      "  if not (b and b.position and battle and battle.battlerAt) then return b end",
+      "  local now = battle:battlerAt(b.position)",
+      "  if now ~= nil and now ~= b then return now end",
+      "  return b",
+      "end",
+    } },
     { name = "Targeting.resolve", kind = "field",
       base = "d8956bb7", edits = {
+        { at = 3, cut = 0,
+          ctx = { before = { "2c681181", "f7fec519" }, old = {  }, after = { "811c9dc5", "7d95d8e8" } },
+          put = {
+            "  chosen = onField(battle, chosen)",
+          } },
         { at = 19, cut = 1,
           ctx = { before = { "927065fb", "1c09f13e" }, old = { "5a2e5c44" }, after = { "5b503ded", "6a8e75aa" } },
           put = {
@@ -108,9 +129,11 @@ return {
           put = {
             "    if ally and ally.mon and not ally.fainted and not ally.faintQueued and (ally.mon.hp or 0) > 0 then out[#out + 1] = ally end",
           } },
-        { at = 43, cut = 1,
-          ctx = { before = { "6ed7bf5a", "a28d6a00" }, old = { "4d9ffa22" }, after = { "e03ffc92", "43141498" } },
+        { at = 42, cut = 2,
+          ctx = { before = { "67907c84", "6ed7bf5a" }, old = { "a28d6a00", "4d9ffa22" }, after = { "e03ffc92", "43141498" } },
           put = {
+            "    local held = onField(battle, user.thrashTarget)",
+            "    user.thrashTarget = held",
             "    if held and held.mon and not held.fainted and not held.faintQueued and (held.mon.hp or 0) > 0 then return { held } end",
           } },
         { at = 53, cut = 1,
