@@ -3,6 +3,22 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha.5
+
+Plays with 1.4.1-alpha.3 and alpha.4 (same link protocol, 12).
+
+### Added
+
+- **Kris on a Gold or Silver screen.**  A Crystal partner who plays as Kris
+  was drawn as the Gold/Silver boy: those games have no Kris.  Import a
+  **Crystal** ROM in the mod's IMPORT slot (the same one the emotes use --
+  they keep working from it) and her walking and bike sprites and her battle
+  back pic are cut from it once, on your device, and used for her.  Without
+  a Crystal ROM nothing changes.
+- **Your partner's own back pic in a co-op double** whenever it is not yours:
+  Kris beside the boy, or the boy beside Kris, also in Crystal (where both
+  used to stand in the same one).
+
 ## 1.4.1-alpha.4
 
 Plays with 1.4.1-alpha.3 (same link protocol, 12): only how your partner
