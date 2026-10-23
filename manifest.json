@@ -23,7 +23,7 @@
     {
       "id": "johto_rom",
       "name": "Your Gold / Silver / Crystal ROM (optional)",
-      "description": "Optional. Gives the co-op emotes and the trainers' \"!\" the cartridge's own bubbles, cut from your ROM on this device; without it they are drawn ones. The mod works either way.",
+      "description": "Optional. Gives the co-op emotes and the trainers' \"!\" the cartridge's own bubbles, cut from your ROM on this device; without it they are drawn ones. A Crystal ROM also lets Gold and Silver show a partner who plays as Kris as Kris (walking, on the bike and in co-op battles). The mod works either way.",
       "file": "baseroms/johto.gbc",
       "format": "gb",
       "size": 2097152,

@@ -108,6 +108,7 @@ if fresh then
   end
   for _, name in ipairs(MODULES) do package.loaded[name] = nil end
   package.loaded["pkmultiplayer.options"] = nil
+  package.loaded["pkmultiplayer.kris"] = nil
 end
 
 local generation = tonumber(mod.generation) or 1
@@ -271,9 +272,23 @@ if generation == 2 and love and love.filesystem and love.image then
       log("warn", "emote bubbles: %s", tostring(why))
     end
   end
+  -- KRIS on a Gold / Silver screen, when that ROM is a Crystal one (lib/Kris.lua)
+  local Kris = chunkFor("lib/Kris.lua")()
+  package.loaded["pkmultiplayer.kris"] = Kris
+  local function installKris()
+    local Data = package.loaded["src.core.Data"]
+    if type(Data) ~= "table" then return end
+    local ok, done, why = pcall(Kris.install, mod, Data)
+    if ok and done then
+      log("info", "Kris: cut from the Crystal ROM")
+    elseif not ok then
+      log("warn", "Kris: %s", tostring(done))
+    end
+  end
   installEmotes()
+  installKris()
   if mod.events and mod.events.on then
-    mod.events:on("game.ready", function() installEmotes() end)
+    mod.events:on("game.ready", function() installEmotes() installKris() end)
   end
 end
 

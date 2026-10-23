@@ -493,6 +493,8 @@ local function buildHello(ow, kind)
     gen = GameVersion.generation(),
     name = CoopManager.getLocalPlayerName(game),
     sprite = localSpriteId(p),
+    -- who they are under the bike or the surf: Kris or the boy
+    walk = p and p.walkId or nil,
     country = CoopManager.net.country or "US",
     timezone = CoopManager.net.timezone,
     timeMode = CoopManager.timeMode,
@@ -524,6 +526,7 @@ local function applyPartnerInfo(msg)
   partner.name = msg.name or partner.name or "PARTNER"
   partner.version = msg.ver or nil
   partner.sprite = msg.sprite or partner.sprite
+  partner.walk = type(msg.walk) == "string" and msg.walk or nil
   partner.country = msg.country or partner.country or "US"
   partner.timezone = msg.timezone or partner.timezone
   partner.game = msg.game
@@ -718,6 +721,38 @@ local function partnerFrameOffset(ow)
   return nil
 end
 CoopManager.partnerFrameOffset = partnerFrameOffset
+
+-- ---------------------------------------------------------------------
+-- KRIS OR THE BOY, as the partner sees themselves.  An older partner sends
+-- no `walk`; their sprite says it while they walk or ride.
+-- ---------------------------------------------------------------------
+
+local function isKris(id)
+  return type(id) == "string" and id:find("^SPRITE_KRIS") ~= nil
+end
+
+function CoopManager.partnerIsKris()
+  local p = CoopManager.partner
+  return isKris(p.walk or p.sprite)
+end
+
+-- The back pic the partner stands behind you in, in a co-op double, when it
+-- is not your own: their form's back (Crystal names both), or on Gold and
+-- Silver Kris's, cut from a Crystal ROM (lib/Kris.lua).  Returns the path
+-- and whether it is true-colour, or nil to share yours.
+function CoopManager.partnerBackPic(data, myWalk)
+  if not CoopManager.partner.name then return nil end
+  local theirs = CoopManager.partnerIsKris()
+  if theirs == isKris(myWalk) then return nil end
+  local forms = data and data.field and data.field.playerForms
+  local form = type(forms) == "table" and forms[theirs and "girl" or "boy"]
+  if type(form) == "table" and type(form.back) == "string" then
+    return form.back, form.trueColor and true or false
+  end
+  local K = package.loaded["pkmultiplayer.kris"]
+  if theirs and K and K.backPath then return K.backPath, false end
+  return nil
+end
 
 local function applyPartnerPalette(npc, game)
   if npc and npc.sprite and npc.sprite.setPalette then
