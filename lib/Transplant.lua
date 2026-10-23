@@ -18,6 +18,74 @@
 local Transplant = {}
 
 local getupvalue, setupvalue = debug.getupvalue, debug.setupvalue
+
+-- WHAT WAS THERE BEFORE THIS MOD, and a way to put it back.
+--
+-- Going back to the launcher takes the mod's globals out of _G, but the
+-- engine's modules stay loaded -- still holding the co-op functions of the
+-- load before.  Those are not the engine's source, so the next load could not
+-- edit them ("the engine function's source is not readable") and left half
+-- the co-op unpatched.  Every change made here is now written down:
+--   * Transplant.record, when main.lua sets it, gets an undo for each one --
+--     put back only while the slot still holds what this mod put there, so a
+--     wrapper another mod added since is never thrown away;
+--   * ORIG maps each function this mod put in to the one it replaced, so a
+--     copy left over from an earlier load can be seen through to the engine's.
+-- ORIG lives on `package`, which outlives a load (the engine does not put it
+-- back), and holds its keys weakly.
+local ORIG = rawget(package, "__pkmultiplayer_orig")
+if not ORIG then
+  ORIG = setmetatable({}, { __mode = "k" })
+  rawset(package, "__pkmultiplayer_orig", ORIG)
+end
+Transplant.ORIG = ORIG
+-- ...and which load put each one in (package.__pkmultiplayer_load, set by
+-- main.lua): only an EARLIER load's copy is looked through -- this load's own
+-- (a co-op copy a wrapper then goes around) is the thing to build on
+local BORN = rawget(package, "__pkmultiplayer_born")
+if not BORN then
+  BORN = setmetatable({}, { __mode = "k" })
+  rawset(package, "__pkmultiplayer_born", BORN)
+end
+local function thisLoad() return rawget(package, "__pkmultiplayer_load") end
+
+-- the function behind every copy an earlier load of this mod put in front of it
+local function original(f)
+  local now = thisLoad()
+  for _ = 1, 32 do
+    local o = ORIG[f]
+    if o == nil or BORN[f] == now then break end
+    f = o
+  end
+  return f
+end
+Transplant.original = original
+
+local function note(undo)
+  if Transplant.record then Transplant.record(undo) end
+end
+
+-- upvalue `idx` of `fn` := v, written down
+local function setUp(fn, idx, v)
+  local _, old = getupvalue(fn, idx)
+  if old == v then return end
+  if type(v) == "function" and type(old) == "function" then ORIG[v], BORN[v] = old, thisLoad() end
+  note(function()
+    local _, cur = getupvalue(fn, idx)
+    if cur == v then setupvalue(fn, idx, old) end
+  end)
+  setupvalue(fn, idx, v)
+end
+
+-- t[k] went from `old` to its current value: written down
+local function noteField(t, k, old)
+  local v = rawget(t, k)
+  if v == old then return end
+  if type(v) == "function" and type(old) == "function" then ORIG[v], BORN[v] = old, thisLoad() end
+  note(function()
+    if rawget(t, k) == v then rawset(t, k, old) end
+  end)
+end
 local getinfo = debug.getinfo
 
 -- ---------------------------------------------------------------- hashing
@@ -318,13 +386,14 @@ function Transplant.apply(module, spec, log)
     return path
   end
 
-  -- the engine function a unit names, as the module holds it right now
+  -- the engine function a unit names, as the module holds it right now --
+  -- looking through any copy an earlier load of this mod left there
   local function resolve(name, kind)
     if kind == "local" then
       local ref = refs[name]
       if not ref then return nil end
       local _, v = getupvalue(ref.fn, ref.idx)
-      return v
+      return original(v)
     end
     local path = pathOf(name)
     local cur
@@ -341,7 +410,7 @@ function Transplant.apply(module, spec, log)
       if type(cur) ~= "table" then return nil end
       cur = rawget(cur, path[i])
     end
-    return cur
+    return original(cur)
   end
 
   local function hashOf(f)
@@ -364,13 +433,14 @@ function Transplant.apply(module, spec, log)
         if not name then break end
         if type(v) == "function" and not seen[v] then
           seen[v] = true
-          local info = getinfo(v, "S")
+          local real = original(v)
+          local info = getinfo(real, "S")
           if info and isFile(info.source, spec.file) then
-            local hit = { holder = g, idx = i, fn = v }
+            local hit = { holder = g, idx = i, fn = real }
             if base and hashOf(v) == base then return hit end
             best = best or (kind ~= "local" and hit) or nil
           elseif depth < 4 then
-            local hit = walk(v, depth + 1)
+            local hit = walk(real, depth + 1)
             if hit then return hit end
           end
         end
@@ -480,7 +550,7 @@ function Transplant.apply(module, spec, log)
       local ref = inScope[k] and refs[k]
       if ref then
         cache[k] = nil
-        setupvalue(ref.fn, ref.idx, v)
+        setUp(ref.fn, ref.idx, v)
       else
         _G[k] = v
       end
@@ -490,6 +560,22 @@ function Transplant.apply(module, spec, log)
   local chunk, err = loadstring(source, spec.chunkname or ("=" .. spec.module))
   if not chunk then error(("%s: the co-op version does not compile: %s"):format(spec.module, err), 0) end
   setfenv(chunk, env)
+
+  -- every slot a unit writes, as it stands before the chunk runs
+  local slots = {}
+  for _, u in ipairs(units) do
+    if u.kind ~= "local" then
+      local path = pathOf(u.name)
+      local owner = module
+      if path[1] ~= spec.name then owner = env[path[1]] end
+      for i = 2, #path - 1 do owner = type(owner) == "table" and rawget(owner, path[i]) or nil end
+      if type(owner) == "table" then
+        local key = path[#path]
+        slots[#slots + 1] = { owner = owner, key = key, old = rawget(owner, key) }
+      end
+    end
+  end
+
   local result = chunk()
 
   -- the wrapped ones: the wrapper goes back on the field, and calls the
@@ -502,11 +588,12 @@ function Transplant.apply(module, spec, log)
     local key = path[#path]
     local fresh = owner and rawget(owner, key)
     if type(fresh) == "function" and fresh ~= w.wrapper then
-      owner[key] = w.wrapper
-      setupvalue(w.inner.holder, w.inner.idx, fresh)
+      rawset(owner, key, w.wrapper)          -- back to what it was: not a change
+      setUp(w.inner.holder, w.inner.idx, fresh)
     end
   end
   report.wrapped = #wrapped
+  for _, slot in ipairs(slots) do noteField(slot.owner, slot.key, slot.old) end
 
   -- locals the patch (re)defined: written into the engine's shared upvalue,
   -- and into any module field that was exporting the old value
@@ -516,12 +603,15 @@ function Transplant.apply(module, spec, log)
     if ref then
       local _, old = getupvalue(ref.fn, ref.idx)
       if old ~= value then
-        setupvalue(ref.fn, ref.idx, value)
+        setUp(ref.fn, ref.idx, value)
         cache[name] = nil
         report.injected = report.injected + 1
         if old ~= nil then
           for k, v in pairs(module) do
-            if v == old then module[k] = value end
+            if v == old then
+              rawset(module, k, value)
+              noteField(module, k, old)
+            end
           end
         end
       end

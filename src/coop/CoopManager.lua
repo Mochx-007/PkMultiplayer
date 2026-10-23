@@ -464,6 +464,7 @@ local function buildHello(ow, kind)
   return {
     type = kind or "coop_hello",
     proto = CoopManager.PROTOCOL,
+    ver = CoopManager.modVersion(),
     game = GameVersion.get(),
     gen = GameVersion.generation(),
     name = CoopManager.getLocalPlayerName(game),
@@ -497,6 +498,7 @@ local function applyPartnerInfo(msg)
   CoopManager.partnerLiveN = 0
   CoopManager.partnerTyping = nil
   partner.name = msg.name or partner.name or "PARTNER"
+  partner.version = msg.ver or nil
   partner.sprite = msg.sprite or partner.sprite
   partner.country = msg.country or partner.country or "US"
   partner.timezone = msg.timezone or partner.timezone
@@ -519,9 +521,20 @@ local function applyPartnerInfo(msg)
   partner.badges = msg.badges or 0
 end
 
+-- This mod's version, as the manifest says it (main.lua hands it over
+-- through package.loaded, which needs none of the co-op modules loaded).
+function CoopManager.modVersion()
+  local o = package.loaded["pkmultiplayer.options"]
+  return tostring(o and o.version or "?")
+end
+
+-- Why `msg`'s sender cannot be linked with, or nil: what to show here, and
+-- what to tell them (each side names the OTHER one's version, so both see
+-- which one has to update; a partner from before 1.4.1-alpha.1 sends none).
 local function incompatible(msg)
   if (tonumber(msg.proto) or 1) ~= CoopManager.PROTOCOL then
-    return "PARTNER HAS OTHER VERSION"
+    local theirs = msg.ver and ("PARTNER HAS V" .. tostring(msg.ver):upper()) or "PARTNER HAS OTHER VERSION"
+    return theirs, "PARTNER HAS V" .. CoopManager.modVersion():upper()
   end
   if msg.gen and tonumber(msg.gen) ~= GameVersion.generation() then
     return "PARTNER PLAYS OTHER GAME"
@@ -2237,12 +2250,12 @@ H.net_disconnect = function(ow, msg)
 end
 
 local function onHello(ow, msg)
-  local bad = incompatible(msg)
+  local bad, tellThem = incompatible(msg)
   if bad then
     CoopLog.error("MANAGER", "Incompatible partner: " .. bad)
     CoopManager.showStatus(bad, 4)
     if CoopManager.net then
-      CoopManager.net:send({ type = "coop_reject", reason = bad })
+      CoopManager.net:send({ type = "coop_reject", reason = tellThem or bad })
       CoopManager.net:flush()
       CoopManager.net:shutdown()
     end

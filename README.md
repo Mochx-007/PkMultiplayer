@@ -74,8 +74,9 @@ Menú co-op (START → CO-OP (LAN) estando conectado), siete filas sin scroll:
 CHAT, EMOTE, WARP TO PARTNER, **PARTNER ▶** (ITEM FOR PARTNER, WATCH, TRADE,
 BATTLE P1 VS P2, MYSTERY GIFT), POKéDEX, **RULES ▶** (STORY SYNC, TEAM UP WILD,
 SHARE DEX, LINK DAYCARE, PARTNER HEAL, SOUL LINK, SOUL LINKS; el recuadro de
-arriba explica la regla marcada) y DISCONNECT. B vuelve de una página a la
-anterior. Sin conectar: RECONNECT, HOST, JOIN, VISIT, STORY SYNC, EMOTE, EXIT.
+arriba explica la regla marcada), VERSION (tu versión, el protocolo y la de tu
+compañero) y DISCONNECT. B vuelve de una página a la anterior. Sin conectar:
+RECONNECT, HOST, JOIN, VISIT, STORY SYNC, EMOTE, VERSION, EXIT.
 
 Los **ataques** caen sobre el Pokémon que hay de verdad, también en combates
 individuales: el cartucho apunta al centro de la caja de 56×56, y contra un

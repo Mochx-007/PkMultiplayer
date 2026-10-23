@@ -93,6 +93,26 @@ do
   T.check(cells(rules[1].label) == 16 and rules[1].label:match("O[NF]F?$") ~= nil,
           "a rule's ON/OFF sits at the right edge (" .. rules[1].label .. ")")
 
+  -- VERSION: this mod's version and protocol, and the partner's once linked
+  local verRow
+  for _, row in ipairs(top) do if row.label == "VERSION" then verRow = row end end
+  T.check(verRow and verRow.info and verRow.info[1] == "MOD V" .. CoopManager.modVersion():upper(),
+          "the VERSION row shows this mod's version (" .. tostring(verRow and verRow.info[1]) .. ")")
+  T.check(verRow and verRow.info[2] == "LINK PROTOCOL " .. require("src.coop.CoopNet").PROTOCOL,
+          "...and the link protocol")
+  local offlineVer
+  for _, row in ipairs(menu:offlineRows()) do if row.label == "VERSION" then offlineVer = row end end
+  T.check(offlineVer ~= nil, "the VERSION row is on the offline page too")
+  local savedIsConn = CoopManager.isConnected
+  CoopManager.isConnected = function() return true end
+  CoopManager.partner.version = "1.4.0"
+  for _, row in ipairs(menu:connectedRows(ow)) do
+    if row.label == "VERSION" then verRow = row end
+  end
+  T.check(verRow.info[3] == "P2 V1.4.0", "linked, it shows the partner's version too")
+  CoopManager.partner.version = nil
+  CoopManager.isConnected = savedIsConn
+
   -- A on PARTNER opens its page; B comes back to the PARTNER row, not the top
   local where
   for i, row in ipairs(top) do if row.sub == "partner" then where = i end end

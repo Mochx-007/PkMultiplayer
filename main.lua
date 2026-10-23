@@ -26,14 +26,19 @@
 
 local mod = ...
 
--- one record per process: a hot reload (F5) or a second game boot in the same
--- session must not wrap anything twice
+-- one record per load: a hot reload (F5) keeps it and must not wrap anything
+-- twice; going back to the launcher takes it out of _G, and the next boot --
+-- the game after the launcher's backdrop, or after updating the mod in the
+-- MODS panel -- starts a new one (`fresh`)
 local STATE = rawget(_G, "__PKMULTIPLAYER")
+local fresh = STATE == nil
 if not STATE then
   STATE = { applied = {}, pending = {}, reports = {} }
   rawset(_G, "__PKMULTIPLAYER", STATE)
 end
 STATE.mod = mod
+-- the load lib/Transplant.lua and lib/Hooks.lua tag their changes with
+rawset(package, "__pkmultiplayer_load", STATE)
 
 local function log(level, fmt, ...)
   local l = mod.log
@@ -58,13 +63,7 @@ local function chunkFor(rel)
   return fn
 end
 
-local generation = tonumber(mod.generation) or 1
-if generation > 2 then
-  log("info", "co-op is for Gen 1 and Gen 2 games; nothing to do on generation %d", generation)
-  return
-end
-
--- ------------------------------------------------------- 1. the modules
+-- the mod's own modules (registered under 1, after the generation check)
 local MODULES = {
   "src.coop.CoopBattle", "src.coop.CoopBattleInviteModal",
   "src.coop.CoopBattleSelect", "src.coop.CoopChatBox", "src.coop.CoopEmotes",
@@ -78,6 +77,46 @@ local MODULES = {
   "src.coop.CoopDayCare", "src.coop.CoopTower",
   "src.battle.DoublesAI", "src.render.MicroFont", "src.follow.FollowMon",
 }
+
+-- ------------------------------------------- 0. what the last load left
+-- THE LAST LOAD'S CO-OP IS STILL IN THE ENGINE.  The engine's modules stay
+-- loaded across a trip back to the launcher, holding the last load's co-op
+-- functions and wrappers; patching those again failed ("the engine
+-- function's source is not readable") and left half the co-op out, and the
+-- mod's own modules stayed the old version (an update from the MODS panel
+-- did not take until a restart).  So a fresh load first puts the engine back
+-- -- every change the last load wrote down, newest first, each only where
+-- the slot still holds what this mod put there -- drops the link and its own
+-- modules, and patches from scratch.  Before the generation check: a Gen 3
+-- game booted next must not keep Gen 2's co-op either.
+local undo = rawget(package, "__pkmultiplayer_undo")
+if not undo then
+  undo = {}
+  rawset(package, "__pkmultiplayer_undo", undo)
+end
+if fresh then
+  local oldCM = package.loaded["src.coop.CoopManager"]
+  if oldCM and oldCM.disconnect then
+    pcall(function()
+      if oldCM.connected or oldCM.net then oldCM.disconnect() end
+    end)
+  end
+  for i = #undo, 1, -1 do
+    local ok, err = pcall(undo[i])
+    if not ok then log("warn", "putting back the last load's change failed: %s", tostring(err)) end
+    undo[i] = nil
+  end
+  for _, name in ipairs(MODULES) do package.loaded[name] = nil end
+  package.loaded["pkmultiplayer.options"] = nil
+end
+
+local generation = tonumber(mod.generation) or 1
+if generation > 2 then
+  log("info", "co-op is for Gen 1 and Gen 2 games; nothing to do on generation %d", generation)
+  return
+end
+
+-- ------------------------------------------------------- 1. the modules
 for _, name in ipairs(MODULES) do
   local rel = name:gsub("%.", "/") .. ".lua"
   if not package.loaded[name] then
@@ -103,7 +142,7 @@ local function option(key)
   local ok, on = pcall(mod.options.get, mod.options, key)
   return not ok or on ~= false
 end
-package.loaded["pkmultiplayer.options"] = { on = option }
+package.loaded["pkmultiplayer.options"] = { on = option, version = tostring(mod.version or "?") }
 do
   local FollowMon = require("src.follow.FollowMon")
   FollowMon.enabled = function()
@@ -115,6 +154,9 @@ end
 -- ------------------------------------------------------- 2. the patches
 local Transplant = chunkFor("lib/Transplant.lua")()
 local Hooks = chunkFor("lib/Hooks.lua")()
+-- every change this load makes to the engine, written down for the next one
+local function record(fn) undo[#undo + 1] = fn end
+Transplant.record, Hooks.record = record, record
 local index = chunkFor("lib/patches/index.lua")()
 
 -- module name -> list of { kind, run(module) }

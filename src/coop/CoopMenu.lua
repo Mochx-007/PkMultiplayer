@@ -97,6 +97,19 @@ local function ruleLabel(name, on)
   return name .. string.rep(" ", math.max(1, 16 - #name - #v)) .. v
 end
 
+-- THE VERSION ROW: highlighted, the box above says which PkMultiplayer this
+-- is, the link protocol it speaks, and -- linked -- the partner's version
+-- (a partner from before 1.4.1-alpha.1 does not send one).
+local function versionRow()
+  local info = { ("MOD V%s"):format(CoopManager.modVersion():upper()):sub(1, 18),
+                 ("LINK PROTOCOL %d"):format(CoopNet.PROTOCOL) }
+  if CoopManager.isConnected() then
+    local v = CoopManager.partner and CoopManager.partner.version
+    info[3] = (v and ("P2 V" .. tostring(v):upper()) or "P2 V? (OLDER MOD)"):sub(1, 18)
+  end
+  return { label = "VERSION", info = info, run = function() end }
+end
+
 -- THE LINKED MENU, as data: what it says and what A does.
 --
 -- It used to be one list of nineteen rows -- things to do, the partner's
@@ -180,6 +193,7 @@ function CoopMenu:connectedRows(ow, page)
       require("src.coop.CoopDex").open(menu.game)
     end },
     { label = "RULES", sub = "rules", run = open("rules") },
+    versionRow(),
     { label = "DISCONNECT", run = function()
       require("src.coop.CoopRejoin").stop(menu.game)
       CoopManager.disconnect()
@@ -234,6 +248,7 @@ function CoopMenu:offlineRows()
     menu:close()
     require("src.coop.CoopEmotes").openPicker(menu.game)
   end }
+  rows[#rows + 1] = versionRow()
   rows[#rows + 1] = { label = "EXIT", run = function() menu:close() end }
   return rows
 end
@@ -352,20 +367,16 @@ function CoopMenu:draw()
 
   if self.stage == "main" then
     Font.drawBox(0, 0, 20, 5)
-    local rows
-    if not isConn then
+    local rows = isConn and self:connectedRows(findOverworld(self.game)) or self:offlineRows()
+    local current = rows[self.index]
+    if type(current) == "table" and current.info then
+      -- what the highlighted row is about (a rule, the versions), above
+      for i, line in ipairs(current.info) do Font.draw(line, 8, i * 8) end
+    elseif not isConn then
       Font.draw("CO-OP LINK", 8, 8)
       Font.draw("YOUR IP:", 8, 16)
       Font.draw(fit(CoopNet.zeroTierIP() or CoopNet.lanIP(), 18), 8, 24)
-      rows = self:offlineRows()
     else
-      rows = self:connectedRows(findOverworld(self.game))
-    end
-    local current = isConn and rows[self.index]
-    if current and current.info then
-      -- what the highlighted rule does, in the box above
-      for i, line in ipairs(current.info) do Font.draw(line, 8, i * 8) end
-    elseif isConn then
       Font.draw("LINK: " .. fit(partner.name or "PARTNER", 8), 8, 8)
       Font.draw("AREA:", 8, 16)
       -- the round trip, right-aligned on the AREA line

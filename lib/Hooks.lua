@@ -36,14 +36,38 @@ Hooks.sayGoodbye = sayGoodbye
 -- engine functions a wrapper below expected and did not find
 Hooks.missing = {}
 
--- t[name] = make(original), if t[name] is a function at all
+-- t[name] = make(original), if t[name] is a function at all.
+--
+-- Written down the way lib/Transplant.lua writes its changes down: an undo
+-- for the next load (Hooks.record, set by main.lua), and the wrapped function
+-- in package.__pkmultiplayer_orig -- so a wrapper an earlier load left here is
+-- seen through, and the engine's function is wrapped once, not twice.
 local function wrap(t, label, name, make)
-  local original = type(t) == "table" and t[name]
-  if type(original) ~= "function" then
+  local current = type(t) == "table" and t[name]
+  if type(current) ~= "function" then
     Hooks.missing[#Hooks.missing + 1] = label .. "." .. name
     return
   end
-  t[name] = make(original)
+  local ORIG = rawget(package, "__pkmultiplayer_orig")
+  local BORN = rawget(package, "__pkmultiplayer_born")
+  local now = rawget(package, "__pkmultiplayer_load")
+  local original = current
+  if ORIG and BORN then
+    -- only an earlier load's leftovers; this load's co-op copy is wrapped
+    for _ = 1, 32 do
+      local o = ORIG[original]
+      if o == nil or BORN[original] == now then break end
+      original = o
+    end
+  end
+  local wrapper = make(original)
+  t[name] = wrapper
+  if ORIG and BORN then ORIG[wrapper], BORN[wrapper] = original, now end
+  if Hooks.record then
+    Hooks.record(function()
+      if rawget(t, name) == wrapper then rawset(t, name, current) end
+    end)
+  end
 end
 
 -- module name -> function(module) that installs its wrappers

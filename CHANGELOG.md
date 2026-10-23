@@ -3,6 +3,31 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha.1
+
+Plays with 1.4.1-alpha (same link protocol, 10); update anyway -- see Fixed.
+
+### Added
+
+- **VERSION** in the co-op menu (linked or not): highlighted, the box above
+  shows this mod's version and link protocol, and once linked your partner's
+  version.  A partner the link refuses for being on another protocol is now
+  named by version ("PARTNER HAS V1.3.1"), on both sides.
+
+### Fixed
+
+- **Going back to the launcher no longer leaves half the co-op unpatched.**
+  The engine keeps its modules loaded across a trip to the launcher, still
+  holding the last load's co-op code, so the next boot -- the game after the
+  launcher's backdrop, or after updating the mod in the MODS panel -- could not
+  patch them again ("the engine function's source is not readable": battles,
+  targeting, the bag, the party menu, EXP...), stacked a second copy of every
+  wrapper, and kept the old version of the mod's own modules (an update did
+  not take until a restart).  The mod now writes down every change it makes
+  to the engine; a new boot puts them back (only where they are still the
+  mod's, so another mod's wrappers stay), drops the old link and modules, and
+  patches afresh.  A Gen 3 game booted next no longer keeps Gen 2's co-op.
+
 ## 1.4.1-alpha
 
 **Both players need 1.4.1-alpha** (link protocol 10: a 1.4.0 partner would

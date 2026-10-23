@@ -200,20 +200,32 @@ do
   CoopManager.update(nil, 0.016)
   check(net:lastOf("coop_hello") ~= nil, "hello sent when the link comes up")
   check(net:lastOf("coop_hello").proto == CoopNet.PROTOCOL, "hello carries the protocol version")
+  check(net:lastOf("coop_hello").ver == CoopManager.modVersion(), "hello carries the mod's version")
 
-  table.insert(net.queue, hello())
+  table.insert(net.queue, hello({ ver = "9.9.9-test" }))
   CoopManager.update(nil, 0.016)
   check(CoopManager.connected, "partner hello completes the handshake")
   check(net.state == CoopNet.STATE.SYNCED, "transport marked SYNCED")
   check(net:lastOf("coop_welcome") ~= nil, "hello answered with welcome")
   check(CoopManager.partner.name == "MOCHI", "partner name recorded")
+  check(CoopManager.partner.version == "9.9.9-test", "partner's mod version recorded")
 
   -- incompatible partner is refused
   net = freshManager(false)
-  table.insert(net.queue, hello({ proto = 1 }))
+  table.insert(net.queue, hello({ proto = 1, ver = "1.3.1" }))
   CoopManager.update(nil, 0.016)
   check(not CoopManager.connected, "old protocol partner is not linked")
   check(net.closed, "link to incompatible partner is closed")
+  check(CoopManager.statusMessage == "PARTNER HAS V1.3.1", "the refusal names the partner's version ("
+        .. tostring(CoopManager.statusMessage) .. ")")
+  local reject = net:lastOf("coop_reject")
+  check(reject and reject.reason == "PARTNER HAS V" .. CoopManager.modVersion():upper(),
+        "...and tells the partner this one's")
+  -- a partner from before versions were sent still gets the old line
+  net = freshManager(false)
+  table.insert(net.queue, hello({ proto = 1 }))
+  CoopManager.update(nil, 0.016)
+  check(CoopManager.statusMessage == "PARTNER HAS OTHER VERSION", "no version sent: the old refusal")
 end
 
 -- ---------------------------------------------------------------------
