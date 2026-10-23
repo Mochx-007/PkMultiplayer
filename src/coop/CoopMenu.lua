@@ -63,6 +63,24 @@ function CoopMenu.new(game)
   return self
 end
 
+-- Listening for a partner (and VISITORS, src/coop/CoopVisit.lua) with
+-- nobody linked yet.  The door stays open while the host plays: the
+-- hosting screen's B goes back to the game, not to "cancel" -- cancelling
+-- was the only way out, and it shut the door on everyone visiting.
+local function hostingOpen()
+  local net = CoopManager.net
+  return CoopManager.isHost and net ~= nil and not net.closed and net.isHost == true
+     and not CoopManager.isConnected()
+end
+CoopMenu.hostingOpen = hostingOpen
+
+local function visitorCount()
+  local srv = package.loaded["src.coop.CoopVisit"] and package.loaded["src.coop.CoopVisit"].server
+  local n = 0
+  for _ in pairs(srv and srv.visitors or {}) do n = n + 1 end
+  return n
+end
+
 local function findOverworld(game)
   if not game then return nil end
   if game.overworld and game.overworld.isOverworld then return game.overworld end
@@ -219,27 +237,37 @@ function CoopMenu:offlineRows()
       end
     end }
   end
-  rows[#rows + 1] = { label = "HOST", run = function()
-    menu.errorMsg = nil
-    if CoopManager.host(menu.port) then
-      menu.stage = "hosting"
-    else
-      menu.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED TO HOST"
-    end
-  end }
-  rows[#rows + 1] = { label = "JOIN", run = function()
-    menu.visitMode = nil
-    menu.stage = "addrEntry"
-  end }
-  -- a third (fourth, fifth...) player walks the host's world: src/coop/CoopVisit.lua
-  local CoopVisit = require("src.coop.CoopVisit")
-  if CoopVisit.visiting() then
-    rows[#rows + 1] = { label = "STOP VISITING", run = function() CoopVisit.leave() end }
+  if hostingOpen() then
+    -- already hosting: see who is here, or close the door for good.  HOST
+    -- again restarted the session and dropped every visitor.
+    rows[#rows + 1] = { label = "HOSTING...", run = function() menu.stage = "hosting" end }
+    rows[#rows + 1] = { label = "STOP HOSTING", run = function()
+      CoopManager.disconnect()
+      menu.index = 1
+    end }
   else
-    rows[#rows + 1] = { label = "VISIT", run = function()
-      menu.visitMode = true
+    rows[#rows + 1] = { label = "HOST", run = function()
+      menu.errorMsg = nil
+      if CoopManager.host(menu.port) then
+        menu.stage = "hosting"
+      else
+        menu.errorMsg = (CoopManager.net and CoopManager.net.error) or "FAILED TO HOST"
+      end
+    end }
+    rows[#rows + 1] = { label = "JOIN", run = function()
+      menu.visitMode = nil
       menu.stage = "addrEntry"
     end }
+    -- a third (fourth, fifth...) player walks the host's world: src/coop/CoopVisit.lua
+    local CoopVisit = require("src.coop.CoopVisit")
+    if CoopVisit.visiting() then
+      rows[#rows + 1] = { label = "STOP VISITING", run = function() CoopVisit.leave() end }
+    else
+      rows[#rows + 1] = { label = "VISIT", run = function()
+        menu.visitMode = true
+        menu.stage = "addrEntry"
+      end }
+    end
   end
   rows[#rows + 1] = { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
     CoopManager.storySync = not CoopManager.storySync
@@ -292,9 +320,10 @@ function CoopMenu:update(dt)
 
   elseif self.stage == "hosting" then
     if input:wasPressed("b") then
-      CoopManager.disconnect()
-      self.stage = "main"
-      self.index = 1
+      -- back to the game; the session keeps listening (STOP HOSTING ends it)
+      self:close()
+      CoopManager.showStatus("Still hosting", 2.5)
+      return
     end
     if CoopManager.isConnected() then
       self.stage = "main"
@@ -372,6 +401,17 @@ function CoopMenu:draw()
     if type(current) == "table" and current.info then
       -- what the highlighted row is about (a rule, the versions), above
       for i, line in ipairs(current.info) do Font.draw(line, 8, i * 8) end
+    elseif not isConn and self.errorMsg then
+      -- up here, where nothing else is drawn: at the foot of the list it
+      -- landed on top of the last row (EXIT)
+      Font.draw("CO-OP LINK", 8, 8)
+      love.graphics.setColor(0.8, 0.1, 0.1, 1)
+      Font.draw(fit(self.errorMsg, 18), 8, 16)
+      love.graphics.setColor(0, 0, 0, 1)
+      -- a port in use is another game already hosting on this machine
+      if tostring(self.errorMsg):find("IN USE", 1, true) then
+        Font.draw("JOIN OR VISIT IT", 8, 24)
+      end
     elseif not isConn then
       Font.draw("CO-OP LINK", 8, 8)
       Font.draw("YOUR IP:", 8, 16)
@@ -422,15 +462,16 @@ function CoopMenu:draw()
   elseif self.stage == "hosting" then
     Font.drawBox(0, 0, 20, 7)
     Font.draw("HOSTING SESSION", 8, 8)
-    Font.draw("PORT: " .. self.port, 8, 24)
+    Font.draw("PORT: " .. tostring((CoopManager.net and CoopManager.net.port) or self.port), 8, 24)
     Font.draw("IP:", 8, 32)
     Font.draw(fit(CoopNet.zeroTierIP() or CoopNet.lanIP(), 18), 8, 40)
     Font.drawBox(0, 7, 20, 11)
     Font.draw("TELL YOUR FRIEND", 8, 64)
     Font.draw("TO JOIN THIS IP.", 8, 72)
     local dots = string.rep(".", math.floor((love.timer and love.timer.getTime() or 0) * 2) % 4)
-    Font.draw("WAITING" .. dots, 8, 96)
-    Font.draw("B:CANCEL", 8, 128)
+    Font.draw("WAITING" .. dots, 8, 88)
+    Font.draw("VISITORS: " .. visitorCount(), 8, 104)
+    Font.draw("B:PLAY ON", 8, 128)
 
   elseif self.stage == "addrEntry" then
     Font.drawBox(0, 0, 20, 4)
@@ -462,7 +503,7 @@ function CoopMenu:draw()
 
   end
 
-  if self.errorMsg and (self.stage == "main" or self.stage == "addrEntry") then
+  if self.errorMsg and self.stage == "addrEntry" then
     love.graphics.setColor(0.8, 0.1, 0.1, 1)
     Font.draw(fit(self.errorMsg, 18), 8, 116)
   end
