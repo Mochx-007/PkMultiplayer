@@ -57,12 +57,18 @@ local function sendTo(peer, t, reliable)
   if s then pcall(peer.send, peer, s, 0, reliable and "reliable" or "unsequenced") end
 end
 
+-- the version this player picked: a Kanto avatar is dressed in its colour
+local function myVersion()
+  local ok, V = pcall(require, "src.core.GameVersion")
+  return ok and V.get and V.get() or nil
+end
+
 local function myEntry(game, ow, id)
   local p = ow and ow.player
   if not (p and ow.map) then return nil end
   local e = (CoopManager.localEmoteTimer or 0) > 0 and CoopManager.localEmote or nil
   return { id = id, name = CoopManager.getLocalPlayerName(game), sprite = CoopManager.localSpriteId(p),
-           map = ow.map.id, px = p.px, py = p.py, f = p.facing, e = e }
+           map = ow.map.id, px = p.px, py = p.py, f = p.facing, e = e, game = myVersion() }
 end
 
 -- ---------------------------------------------------------------------
@@ -96,7 +102,7 @@ local function visitorList(except)
   for peer, v in pairs(CoopVisit.server.visitors) do
     if peer ~= except and v.map then
       out[#out + 1] = { id = "v" .. v.id, name = v.name, sprite = v.sprite, map = v.map,
-                        px = v.px, py = v.py, f = v.f, e = v.e }
+                        px = v.px, py = v.py, f = v.f, e = v.e, game = v.game }
     end
   end
   return out
@@ -146,6 +152,7 @@ local function serveOnce(game, ow)
         if m.t == "hi" then
           v.name = tostring(m.name or "VISITOR"):upper():sub(1, 8)
           v.sprite = m.sprite
+          v.game = type(m.game) == "string" and m.game or nil
           if not v.named then
             v.named = true
             CoopManager.showStatus(v.name .. " is visiting!", 3)
@@ -171,7 +178,7 @@ local function serveWorld(game, ow, dt)
   local p = CoopManager.partner
   if CoopManager.connected and p.map then
     guest = { id = "g", name = p.name, sprite = p.sprite, map = p.map, px = p.px, py = p.py,
-              f = p.facing, e = (p.emoteTimer or 0) > 0 and p.emote or nil }
+              f = p.facing, e = (p.emoteTimer or 0) > 0 and p.emote or nil, game = p.game }
   end
   for peer in pairs(srv.visitors) do
     local list = visitorList(peer)
@@ -254,7 +261,7 @@ local function visitOnce(game, ow, dt)
     if ev.type == "connect" then
       c.linked = true
       sendTo(c.peer, { t = "hi", name = CoopManager.getLocalPlayerName(game),
-                       sprite = ow and CoopManager.localSpriteId(ow.player) }, true)
+                       sprite = ow and CoopManager.localSpriteId(ow.player), game = myVersion() }, true)
     elseif ev.type == "disconnect" then
       CoopManager.showStatus(c.linked and "The visit ended" or "Host not found", 3)
       CoopVisit.leave()
@@ -334,7 +341,7 @@ local function makeAvatar(game, ow, entry, slot)
   npc.mapId = ow.map.id
   npc.spriteName = sprite
   npc.update = function() end
-  pcall(CoopManager.applyPartnerPalette, npc)
+  pcall(CoopManager.applyPartnerPalette, npc, entry.game)
   ow.npcs = ow.npcs or {}
   ow.entities = ow.entities or {}
   table.insert(ow.npcs, npc)

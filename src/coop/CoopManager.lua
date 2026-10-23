@@ -180,6 +180,25 @@ local P2_BLUE_PALETTE = {
   { 0, 0, 0 },
 }
 
+-- KANTO DRESSES THE PARTNER IN THEIR CARTRIDGE'S COLOUR: the version they
+-- picked at the launcher (their hello's `game`) -- RED in red, BLUE in blue,
+-- YELLOW in yellow.  Johto keeps the one blue above.
+local GEN1_OUTFIT = {
+  red = { 232, 40, 24 },
+  blue = { 40, 112, 248 },
+  yellow = { 240, 192, 0 },
+  green = { 56, 168, 64 },
+}
+
+-- `game`: whose version to dress (a VISIT avatar names its own); default
+-- the partner's
+local function partnerPalette(game)
+  game = game or (CoopManager.partner and CoopManager.partner.game)
+  local outfit = GameVersion.generation() == 1 and type(game) == "string" and GEN1_OUTFIT[game:lower()]
+  if not outfit then return P2_BLUE_PALETTE, "p2_gold_blue" end
+  return { P2_BLUE_PALETTE[1], P2_BLUE_PALETTE[2], outfit, P2_BLUE_PALETTE[4] }, "p2_kanto_" .. game:lower()
+end
+
 -- ---------------------------------------------------------------------
 -- helpers
 -- ---------------------------------------------------------------------
@@ -504,6 +523,10 @@ local function applyPartnerInfo(msg)
   partner.country = msg.country or partner.country or "US"
   partner.timezone = msg.timezone or partner.timezone
   partner.game = msg.game
+  -- their colour follows the version they play (a rejoin may bring another)
+  if CoopManager.partnerNpc and CoopManager.applyPartnerPalette then
+    CoopManager.applyPartnerPalette(CoopManager.partnerNpc)
+  end
   partner.inWorld = msg.inWorld == true
   if msg.map then
     partner.map = msg.map
@@ -692,11 +715,13 @@ local function partnerFrameOffset(ow)
 end
 CoopManager.partnerFrameOffset = partnerFrameOffset
 
-local function applyPartnerPalette(npc)
+local function applyPartnerPalette(npc, game)
   if npc and npc.sprite and npc.sprite.setPalette then
-    pcall(npc.sprite.setPalette, npc.sprite, P2_BLUE_PALETTE, "p2_gold_blue")
+    local colors, key = partnerPalette(game)
+    pcall(npc.sprite.setPalette, npc.sprite, colors, key)
   end
 end
+CoopManager.partnerPalette = partnerPalette
 CoopManager.applyPartnerPalette = applyPartnerPalette
 
 local function knownSprite(game, id)
