@@ -36,7 +36,9 @@ CoopNet.DEFAULT_PORT = 7777
 -- slot after a switch -- a v9 copy would resolve the same turn differently
 -- 11: an egg crosses the cable as an egg and stays out of a link battle -- a
 -- v10 copy would send the egg out on its side only
-CoopNet.PROTOCOL = 11
+-- 12: a Wrap holds the foe it hit and the guest sweeps the field in the
+-- host's order -- a v11 copy would resolve the same turn differently
+CoopNet.PROTOCOL = 12
 CoopNet.CHANNELS = 2
 CoopNet.CH_RELIABLE = 0
 CoopNet.CH_FAST = 1

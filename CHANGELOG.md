@@ -3,6 +3,44 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha.3
+
+**Both players need 1.4.1-alpha.3** (link protocol 12: an alpha.2 partner
+would resolve some turns differently).  After installing it, restart the
+game once.
+
+### Added
+
+- **Heal your partner's Pokemon from your bag** in a co-op double: the bag's
+  party screen lists your three, then theirs.  The heal lands on their real
+  Pokemon, on their screen too.
+- **Gen 1: your partner wears their version's colour** -- RED in red, BLUE in
+  blue, YELLOW in yellow (visitors too).  Gen 2 keeps the blue.
+- **Host and keep playing.**  On the HOSTING screen B goes back to the game
+  and the session stays open for a partner or visitors; the co-op menu then
+  shows HOSTING... (with how many are visiting) and STOP HOSTING.
+
+### Fixed
+
+- **Confusion, sleep and other statuses no longer differ between the two
+  screens.**  A WRAP / BIND held a foe on one copy of the battle and not on
+  the other, and the end-of-turn effects (poison, LEECH SEED) ran in a
+  different order on each; from then on every roll differed.  A test now
+  plays hundreds of status-heavy doubles and compares every Pokemon on both
+  copies after every turn.
+- **Items in a co-op double no longer risk a desync**: a heal now travels
+  with the turn and both copies apply it as the turn opens, instead of
+  whenever it arrived.
+- **The host leaving no longer strands the partner**: the team picker of an
+  invite closes when the host cancels or drops, instead of staying open.
+- **A battle the story lets you lose** (Oak's Lab, the Cherrygrove rival),
+  lost together, now heals the partner's team the way the scene heals the
+  host's; it was left at 0 HP.
+- **VISIT**: cancelling the host was the only way out of its screen, and it
+  sent every visitor home; HOST again restarted the session.
+- **"PORT 7777 IN USE"** is shown at the top of the menu (it covered EXIT),
+  with what to do: another game on this machine is hosting -- JOIN or VISIT it.
+
 ## 1.4.1-alpha.2
 
 Plays with 1.4.1-alpha.1 (same link protocol, 11): only how a co-op double
