@@ -5,7 +5,9 @@ Version headings match `manifest.json`'s `version`.
 
 ## 1.4.1-alpha.1
 
-Plays with 1.4.1-alpha (same link protocol, 10); update anyway -- see Fixed.
+**Both players need 1.4.1-alpha.1** (link protocol 11: a 1.4.1-alpha partner
+would still send an egg out in a battle between you).  After installing it,
+restart the game once.
 
 ### Added
 
@@ -16,6 +18,11 @@ Plays with 1.4.1-alpha (same link protocol, 10); update anyway -- see Fixed.
 
 ### Fixed
 
+- **An egg can no longer fight in BATTLE P1 VS P2.**  The cable never carried
+  the egg flag, so an egg leading a party came out as a Pokemon -- on both
+  machines -- and a traded egg arrived hatched.  The egg now crosses the cable
+  as an egg (it stays one in a trade), and stays out of a link battle, as on
+  the cartridge.
 - **Going back to the launcher no longer leaves half the co-op unpatched.**
   The engine keeps its modules loaded across a trip to the launcher, still
   holding the last load's co-op code, so the next boot -- the game after the

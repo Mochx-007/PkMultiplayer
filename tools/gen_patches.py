@@ -51,6 +51,8 @@ MODULES = [
     ('src/battle/Targeting.lua', 'src.battle.Targeting', set(), True),
     ('src/battle/TrainerAI.lua', 'src.battle.TrainerAI', {'TrainerAI.switchAction'}, True),
     ('src/inventory/ItemEffects.lua', 'src.inventory.ItemEffects', set(), True),
+    ('src/link/LinkBattle.lua', 'src.link.LinkBattle', set(), True),
+    ('src/link/Protocol.lua', 'src.link.Protocol', set(), True),
     ('src/render/HudTiles.lua', 'src.render.HudTiles', set(), True),
     ('src/render/TextBox.lua', 'src.render.TextBox', {'TextBox.new'}, True),
     ('src/script/Commands.lua', 'src.script.Commands', set(), True),

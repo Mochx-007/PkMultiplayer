@@ -34,7 +34,9 @@ CoopNet.DEFAULT_PORT = 7777
 -- link -- a v6 copy would drop every event from another map
 -- 10: the doubles AI plans the foes' turn together and a hit follows the
 -- slot after a switch -- a v9 copy would resolve the same turn differently
-CoopNet.PROTOCOL = 10
+-- 11: an egg crosses the cable as an egg and stays out of a link battle -- a
+-- v10 copy would send the egg out on its side only
+CoopNet.PROTOCOL = 11
 CoopNet.CHANNELS = 2
 CoopNet.CH_RELIABLE = 0
 CoopNet.CH_FAST = 1
