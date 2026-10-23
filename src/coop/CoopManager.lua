@@ -1530,6 +1530,18 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
       if cOw and cOw.afterBattle then
         pcall(cOw.afterBattle, cOw, result, p2Battle)
       end
+      -- A BATTLE THE STORY LETS YOU LOSE (Oak's Lab, the Cherrygrove rival)
+      -- is no blackout, so afterBattle heals nobody: on the host's screen the
+      -- scene's own script does it (OaksLabRivalEndBattleScript HealParty),
+      -- and the guest has no script running -- their team was left at 0 HP
+      -- with no way to the POKeMON CENTER.  Lost together, healed together.
+      if result == "lose" and (msg.canLose or (msg.oppClass == "OPP_RIVAL1"
+                               and mapsMatch(msg.mapId, "OAKS_LAB"))) then
+        local Pokemon = require("src.pokemon.Pokemon")
+        for _, mon in ipairs(game.save and game.save.party or {}) do
+          if type(mon) == "table" and not mon.isEgg then pcall(Pokemon.heal, mon) end
+        end
+      end
       if result == "win" and cOw and cOw.runGen2AfterBattle and msg.trainerIndex
          and cOw.map and mapsMatch(cOw.map.id, msg.mapId) then
         pcall(cOw.runGen2AfterBattle, cOw, msg.trainerIndex)

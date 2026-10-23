@@ -1209,6 +1209,31 @@ do
   Pokemon.heal = realHeal
   CoopManager.partnerHeals = false
   check(note and c.hp == 20 and b.hp == 20, "PARTNER HEALS: Sinnoh's partner rule heals the team")
+
+  -- lost together in a battle the story lets you lose: the host's scene heals
+  -- the host; the guest, who runs no script, is healed here
+  local BattleState = require("src.battle.BattleState")
+  local CB = require("src.coop.CoopBattle")
+  local realNew, realInit = BattleState.newTrainer, CB.initBattle
+  BattleState.newTrainer = function() return {} end
+  CB.initBattle = function() end
+  Pokemon.heal = function(m) m.hp = m.stats.hp; m.status = nil end
+  local function lostTo(msg)
+    local mon = { species = "A", hp = 0, stats = { hp = 20 } }
+    local pushed
+    local ow = { pushBattle = function(_, bt) pushed = bt end, afterBattle = function() end }
+    local g = { save = { party = { mon } }, overworld = ow, stack = { push = function() end } }
+    CoopManager.startGuestBattle(g, ow, msg, { mon })
+    pushed.onFinish("lose")
+    return mon.hp
+  end
+  check(lostTo({ oppClass = "OPP_RIVAL1", mapId = "CHERRYGROVE_CITY", canLose = true }) == 20,
+        "a can-lose battle lost together heals the guest's team")
+  check(lostTo({ oppClass = "OPP_RIVAL1", mapId = "OAKS_LAB" }) == 20,
+        "Oak's Lab rival lost together heals the guest's team (the host's script heals the host)")
+  check(lostTo({ oppClass = "OPP_FALKNER", mapId = "VIOLET_GYM" }) == 0,
+        "an ordinary loss is left to the blackout")
+  BattleState.newTrainer, CB.initBattle, Pokemon.heal = realNew, realInit, realHeal
 end
 
 if failures == 0 then
