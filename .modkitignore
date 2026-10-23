@@ -18,6 +18,7 @@ tests/foreign_wrapper.lua
 tests/foreign_wrapper_pre.lua
 tests/patch_scope.lua
 tests/reload.lua
+tests/reload_patched.lua
 tests/run.lua
 tests/test_coop.lua
 tools/check_patches.lua
