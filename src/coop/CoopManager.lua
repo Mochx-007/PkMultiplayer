@@ -180,23 +180,27 @@ local P2_BLUE_PALETTE = {
   { 0, 0, 0 },
 }
 
--- KANTO DRESSES THE PARTNER IN THEIR CARTRIDGE'S COLOUR: the version they
--- picked at the launcher (their hello's `game`) -- RED in red, BLUE in blue,
--- YELLOW in yellow.  Johto keeps the one blue above.
-local GEN1_OUTFIT = {
+-- THE PARTNER WEARS THEIR CARTRIDGE'S COLOUR: the version they picked at
+-- the launcher (their hello's `game`) -- RED in red, BLUE in blue, YELLOW in
+-- yellow; GOLD in gold, SILVER in silver, CRYSTAL in crystal.  A version
+-- not listed keeps the blue above.
+local VERSION_OUTFIT = {
   red = { 232, 40, 24 },
   blue = { 40, 112, 248 },
   yellow = { 240, 192, 0 },
   green = { 56, 168, 64 },
+  gold = { 224, 160, 16 },
+  silver = { 144, 152, 176 },
+  crystal = { 56, 192, 232 },
 }
 
 -- `game`: whose version to dress (a VISIT avatar names its own); default
 -- the partner's
 local function partnerPalette(game)
   game = game or (CoopManager.partner and CoopManager.partner.game)
-  local outfit = GameVersion.generation() == 1 and type(game) == "string" and GEN1_OUTFIT[game:lower()]
+  local outfit = type(game) == "string" and VERSION_OUTFIT[game:lower()]
   if not outfit then return P2_BLUE_PALETTE, "p2_gold_blue" end
-  return { P2_BLUE_PALETTE[1], P2_BLUE_PALETTE[2], outfit, P2_BLUE_PALETTE[4] }, "p2_kanto_" .. game:lower()
+  return { P2_BLUE_PALETTE[1], P2_BLUE_PALETTE[2], outfit, P2_BLUE_PALETTE[4] }, "p2_" .. game:lower()
 end
 
 -- ---------------------------------------------------------------------
