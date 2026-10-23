@@ -227,14 +227,14 @@ local SYMBOLS = {
 
 local drawnCache = {}
 
--- The drawn bubble for emote `id` as an Image (nil without a renderer).
-function CoopEmotes.drawnBubble(id)
+-- The drawn bubble for emote `id` as 16x16 ImageData (nil without
+-- love.image).  lib/Emotes.lua lays these out as the field's sheet when no
+-- ROM was imported, so a trainer's "!" wears the same bubble as the co-op's.
+function CoopEmotes.drawnBubbleData(id)
   local e = CoopEmotes.get(id)
   local sym = e and SYMBOLS[e.id]
-  if not sym then return nil end
-  local hit = drawnCache[e.id]
-  if hit ~= nil then return hit or nil end
-  local ok, img = pcall(function()
+  if not (sym and love and love.image and love.image.newImageData) then return nil end
+  local ok, data = pcall(function()
     local data = love.image.newImageData(16, 16)
     local shade = { ["#"] = 0, ["+"] = 170 / 255, ["o"] = 1 }
     local function put(x, y, ch)
@@ -249,7 +249,27 @@ function CoopEmotes.drawnBubble(id)
         if row:sub(x, x) ~= "." then put(x + 2, y + 1, row:sub(x, x)) end
       end
     end
-    local made = love.graphics.newImage(data)
+    return data
+  end)
+  return ok and data or nil
+end
+
+-- The emote that sits in slot `i` of the field's sheet (EMOTE_* order).
+function CoopEmotes.forBubble(i)
+  for _, e in ipairs(CoopEmotes.LIST) do
+    if e.bubble == i then return e end
+  end
+  return nil
+end
+
+-- The drawn bubble for emote `id` as an Image (nil without a renderer).
+function CoopEmotes.drawnBubble(id)
+  local e = CoopEmotes.get(id)
+  if not e then return nil end
+  local hit = drawnCache[e.id]
+  if hit ~= nil then return hit or nil end
+  local ok, img = pcall(function()
+    local made = love.graphics.newImage(assert(CoopEmotes.drawnBubbleData(e.id)))
     made:setFilter("nearest", "nearest")
     return made
   end)

@@ -2750,17 +2750,6 @@ local function drawPill(bx, by, bw, bh)
 end
 CoopManager.drawPill = drawPill
 
-function CoopManager.drawEmoteBubble(cx, cy, sym)
-  local MicroFont = require("src.render.MicroFont")
-  local bw = math.max(13, MicroFont.width(sym) + 6)
-  local bx = math.floor(cx - bw / 2)
-  local by = math.floor(cy)
-  drawPill(bx, by, bw, 9)
-  love.graphics.setColor(0, 0, 0, 1)
-  MicroFont.draw(sym, bx + 3, by + 2)
-  love.graphics.setColor(1, 1, 1, 1)
-end
-
 local function screenPoint(ow, wx, wy)
   local cam = ow.camera
   local vw, vh = (ow.viewW or 160), (ow.viewH or 144)

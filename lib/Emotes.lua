@@ -83,10 +83,44 @@ end
 
 -- Make sure the sheet exists (cutting it from the imported ROM the first
 -- time) and register it.  Returns the sheet's path, or nil + why.
+-- No ROM imported: this mod's own drawn bubbles, laid out as the sheet.
+--
+-- Reported from play: "the NPCs use the old emote system".  Without the
+-- cartridge's sheet the co-op emotes fell back to the drawn bubbles, while a
+-- trainer's "!" -- drawn by the field -- fell back to its own plain box, and
+-- the following Pokemon's find to yet another bubble: three looks for one
+-- thing.  Registered as the sheet, the drawn bubbles are what all of them
+-- draw.  The cartridge's slot 8 (the fishing bubble) has no drawn art; it
+-- borrows the "!".  `pkmDrawn` lets a ROM imported later take over.
+Emotes.DRAWN_FILE = "gen2_emotes_drawn_v1.png"
+
+function Emotes.installDrawn(mod, field)
+  local fs = love and love.filesystem
+  if not (fs and love.image and love.image.newImageData) then return nil, "no images" end
+  local okC, CoopEmotes = pcall(require, "src.coop.CoopEmotes")
+  if not okC then return nil, "no drawn bubbles: " .. tostring(CoopEmotes) end
+  local dir = "modstorage/" .. tostring(mod.id or "PkMultiplayer")
+  local path = dir .. "/" .. Emotes.DRAWN_FILE
+  if not fs.getInfo(path, "file") then
+    local sheet = love.image.newImageData(#NAMES * 16, 16)
+    for i = 1, #NAMES do
+      local e = CoopEmotes.forBubble(i)
+      local one = CoopEmotes.drawnBubbleData(e and e.id or "exclaim")
+      if one then sheet:paste(one, (i - 1) * 16, 0, 0, 0, 16, 16) end
+    end
+    fs.createDirectory(dir)
+    local ok, err = fs.write(path, sheet:encode("png"):getString())
+    if not ok then return nil, "could not write " .. path .. ": " .. tostring(err) end
+  end
+  field.emotionBubbles = { path = path, bubbles = Emotes.bubbles(), pkmDrawn = true }
+  return path
+end
+
 function Emotes.install(mod, data)
   local field = data and data.field
   if not field then return nil, "no field data" end
-  if type(field.emotionBubbles) == "table" and field.emotionBubbles.path then
+  if type(field.emotionBubbles) == "table" and field.emotionBubbles.path
+     and not field.emotionBubbles.pkmDrawn then
     -- this Gen2Recomped (or another mod) already has them
     return field.emotionBubbles.path
   end
@@ -99,7 +133,12 @@ function Emotes.install(mod, data)
     local imports = mod.imports
     local romPath = imports and imports.path and imports:path(Emotes.IMPORT_ID)
     local rom = romPath and mod:read(romPath)
-    if not rom then return nil, "no ROM imported" end
+    if not rom then
+      if type(field.emotionBubbles) == "table" and field.emotionBubbles.pkmDrawn then
+        return field.emotionBubbles.path
+      end
+      return Emotes.installDrawn(mod, field)
+    end
     local sha1hex
     if love.data and love.data.hash and love.data.encode then
       sha1hex = love.data.encode("string", "hex", love.data.hash("sha1", rom)):lower()

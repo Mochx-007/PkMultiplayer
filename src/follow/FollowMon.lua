@@ -118,8 +118,10 @@ local function drawIcon(self, camX, camY)
   local y = math.floor(py - camY) - 4
   if self.pkmShiny then drawSparkle(x, y, t) end
   if self.pkmFound then
-    local CM = package.loaded["src.coop.CoopManager"]
-    if CM and CM.drawEmoteBubble then pcall(CM.drawEmoteBubble, x + 8, y - 10, "!") end
+    -- the field's own "!" (CoopEmotes: the cartridge's bubble, or the drawn
+    -- one when no ROM was imported), hung where the field hangs a trainer's
+    local age = t - (self.pkmFoundSince or t)
+    pcall(require("src.coop.CoopEmotes").draw, self.pkmGame, "exclaim", x + 8, y + 16, age)
   end
 end
 
@@ -218,7 +220,9 @@ function FollowMon.update(game, ow)
   end
   local lead = FollowMon.lead(game.save)
   npc.pkmShiny = FollowMon.isShiny(lead)
-  npc.pkmFound = game.save.pkmFollowerFind ~= nil
+  local found = game.save.pkmFollowerFind ~= nil
+  if found and not npc.pkmFound then npc.pkmFoundSince = love.timer and love.timer.getTime() or 0 end
+  npc.pkmFound, npc.pkmGame = found, game
   local p = ow.player
   local trail = ow.pkmFollowTrail
   if not trail then

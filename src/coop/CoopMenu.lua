@@ -90,71 +90,100 @@ local function warpLabel()
   return string.format("WARP (%d:%02d)", math.floor(left / 60), left % 60)
 end
 
--- The linked menu, as data: what it says and what A does.  The rules rows
+-- A rule row: the name on the left, ON/OFF lined up on the right edge of
+-- the 16 columns a label has.
+local function ruleLabel(name, on)
+  local v = onOff(on)
+  return name .. string.rep(" ", math.max(1, 16 - #name - #v)) .. v
+end
+
+-- THE LINKED MENU, as data: what it says and what A does.
+--
+-- It used to be one list of nineteen rows -- things to do, the partner's
+-- things and the shared ON/OFF rules all mixed together, nine on screen at a
+-- time -- and reported from play: "the co-op menu with so many options can
+-- be overwhelming".  Now the top page is seven rows that fit without
+-- scrolling; what you do WITH your partner is under PARTNER, the shared
+-- rules under RULES (`sub` opens a page, B comes back), and each rule says
+-- what it does in the box above while it is highlighted (`info`).  The rules
 -- are shared -- toggling one changes it for both players (coop_rules).
-function CoopMenu:connectedRows(ow)
+function CoopMenu:connectedRows(ow, page)
   local menu = self
+  page = page or self.page or "main"
+  local function open(sub)
+    return function()
+      menu.parentIndex = menu.index
+      menu.page, menu.index, menu.scroll = sub, 1, 1
+    end
+  end
+  if page == "partner" then
+    return {
+      { label = "ITEM FOR PARTNER", run = function()
+        menu:close()
+        if ow then CoopManager.useItemOnPartner(menu.game, ow) end
+      end },
+      { label = "WATCH " .. tostring(CoopManager.partner.name or "PARTNER"):upper():sub(1, 7), run = function()
+        require("src.coop.CoopWatch").open(menu.game)
+      end },
+      { label = "TRADE", run = function()
+        menu:close()
+        require("src.coop.CoopLink").invite(menu.game, "trade")
+      end },
+      { label = "BATTLE P1 VS P2", run = function()
+        menu:close()
+        require("src.coop.CoopLink").invite(menu.game, "battle")
+      end },
+      { label = "MYSTERY GIFT", run = function()
+        menu:close()
+        require("src.coop.CoopGift").ask(menu.game, ow)
+      end },
+    }
+  elseif page == "rules" then
+    local function rule(key, name, info)
+      return { label = ruleLabel(name, CoopManager[key]), info = info, run = function()
+        CoopManager.setRule(key, not CoopManager[key])
+      end }
+    end
+    return {
+      rule("storySync", "STORY SYNC",
+           { "STORY EVENTS ONE", "OF YOU SEES COUNT", "FOR BOTH OF YOU." }),
+      rule("wildTogether", "TEAM UP WILD",
+           { "A WILD POKéMON", "NEAR YOU BOTH CAN", "BE FOUGHT AS TWO." }),
+      rule("shareDex", "SHARE DEX",
+           { "WHAT EITHER OF YOU", "CATCHES SHOWS AS", "SEEN FOR BOTH." }),
+      rule("shareDayCare", "LINK DAYCARE",
+           { "BREED WITH THE", "POKéMON YOUR", "PARTNER BOARDED." }),
+      rule("partnerHeals", "PARTNER HEAL",
+           { "AFTER YOU WIN A", "CO-OP BATTLE, BOTH", "TEAMS ARE HEALED." }),
+      rule("soulLink", "SOUL LINK",
+           { "PAIRED CATCHES:", "IF ONE FAINTS,", "BOTH ARE LOST." }),
+      { label = "SOUL LINKS", info = { "SEE WHICH OF YOUR", "POKéMON ARE LINKED", "AND TO WHICH." },
+        run = function() require("src.coop.CoopSoulLink").open(menu.game) end },
+    }
+  end
   return {
     -- the way into the chat on a phone, which has no T key
     { label = "CHAT  (KEY T)", run = function()
       menu:close()
       CoopManager.openChat(menu.game, ow)
     end },
-    { label = warpLabel(), run = function()
-      menu:close()
-      if ow then CoopManager.warpToPartner(ow) end
-    end },
-    { label = "ITEM FOR PARTNER", run = function()
-      menu:close()
-      if ow then CoopManager.useItemOnPartner(menu.game, ow) end
-    end },
-    { label = "WATCH " .. tostring(CoopManager.partner.name or "PARTNER"):upper():sub(1, 7), run = function()
-      require("src.coop.CoopWatch").open(menu.game)
-    end },
-    { label = "MYSTERY GIFT", run = function()
-      menu:close()
-      require("src.coop.CoopGift").ask(menu.game, ow)
-    end },
-    { label = "POKéDEX", run = function()
-      require("src.coop.CoopDex").open(menu.game)
-    end },
-    { label = "SHARE DEX " .. onOff(CoopManager.shareDex), run = function()
-      CoopManager.setRule("shareDex", not CoopManager.shareDex)
-    end },
-    { label = "TEAM UP WILD " .. onOff(CoopManager.wildTogether), run = function()
-      CoopManager.setRule("wildTogether", not CoopManager.wildTogether)
-    end },
-    { label = "LINK DAYCARE " .. onOff(CoopManager.shareDayCare), run = function()
-      CoopManager.setRule("shareDayCare", not CoopManager.shareDayCare)
-    end },
-    { label = "SOUL LINK " .. onOff(CoopManager.soulLink), run = function()
-      CoopManager.setRule("soulLink", not CoopManager.soulLink)
-    end },
-    { label = "SOUL LINKS", run = function()
-      require("src.coop.CoopSoulLink").open(menu.game)
-    end },
-    { label = "STORY SYNC " .. onOff(CoopManager.storySync), run = function()
-      CoopManager.setRule("storySync", not CoopManager.storySync)
-    end },
-    { label = "PARTNER HEAL " .. onOff(CoopManager.partnerHeals), run = function()
-      CoopManager.setRule("partnerHeals", not CoopManager.partnerHeals)
-    end },
-    { label = "TRADE", run = function()
-      menu:close()
-      require("src.coop.CoopLink").invite(menu.game, "trade")
-    end },
-    { label = "BATTLE P1 VS P2", run = function()
-      menu:close()
-      require("src.coop.CoopLink").invite(menu.game, "battle")
-    end },
     { label = "EMOTE  (KEY Y)", run = function()
       menu:close()
       require("src.coop.CoopEmotes").openPicker(menu.game)
     end },
+    { label = warpLabel(), run = function()
+      menu:close()
+      if ow then CoopManager.warpToPartner(ow) end
+    end },
+    { label = "PARTNER", sub = "partner", run = open("partner") },
+    { label = "POKéDEX", run = function()
+      require("src.coop.CoopDex").open(menu.game)
+    end },
+    { label = "RULES", sub = "rules", run = open("rules") },
     { label = "DISCONNECT", run = function()
       require("src.coop.CoopRejoin").stop(menu.game)
       CoopManager.disconnect()
-      menu.index = 1
+      menu.page, menu.index = "main", 1
     end },
   }
 end
@@ -202,8 +231,8 @@ function CoopMenu:offlineRows()
     CoopManager.storySync = not CoopManager.storySync
   end }
   rows[#rows + 1] = { label = "EMOTE", run = function()
-    menu.stage = "emotes"
-    menu.index = 1
+    menu:close()
+    require("src.coop.CoopEmotes").openPicker(menu.game)
   end }
   rows[#rows + 1] = { label = "EXIT", run = function() menu:close() end }
   return rows
@@ -225,6 +254,7 @@ function CoopMenu:update(dt)
 
   if self.stage == "main" then
     local isConn = CoopManager.isConnected()
+    if not isConn then self.page = "main" end
     local rows = isConn and self:connectedRows(ow) or self:offlineRows()
     local maxItems = #rows
     if self.index > maxItems then self.index = 1 end
@@ -234,7 +264,12 @@ function CoopMenu:update(dt)
     elseif input:wasPressed("up") then
       self.index = ((self.index - 2) % maxItems) + 1
     elseif input:wasPressed("b") then
-      self:close()
+      if self.page and self.page ~= "main" then
+        -- back to the row the page was opened from
+        self.page, self.index, self.scroll = "main", self.parentIndex or 1, 1
+      else
+        self:close()
+      end
     elseif input:wasPressed("a") then
       local row = rows[self.index]
       if row and row.run then row.run() end
@@ -293,24 +328,6 @@ function CoopMenu:update(dt)
       self.stage = "addrEntry"
     end
 
-  elseif self.stage == "emotes" then
-    local emoteList = { "heart", "exclaim", "question", "music", "star" }
-    if input:wasPressed("down") then
-      self.index = (self.index % #emoteList) + 1
-    elseif input:wasPressed("up") then
-      self.index = ((self.index - 2) % #emoteList) + 1
-    elseif input:wasPressed("b") then
-      self.stage = "main"
-      self.index = 1
-    elseif input:wasPressed("a") then
-      local picked = emoteList[self.index]
-      CoopManager.sendEmote(picked)
-      pcall(function()
-        local Sound = require("src.core.Sound")
-        Sound.play(self.game.data, "Collision")
-      end)
-      self:close()
-    end
   end
 end
 
@@ -340,9 +357,15 @@ function CoopMenu:draw()
       Font.draw("CO-OP LINK", 8, 8)
       Font.draw("YOUR IP:", 8, 16)
       Font.draw(fit(CoopNet.zeroTierIP() or CoopNet.lanIP(), 18), 8, 24)
-      rows = {}
-      for i, row in ipairs(self:offlineRows()) do rows[i] = row.label end
+      rows = self:offlineRows()
     else
+      rows = self:connectedRows(findOverworld(self.game))
+    end
+    local current = isConn and rows[self.index]
+    if current and current.info then
+      -- what the highlighted rule does, in the box above
+      for i, line in ipairs(current.info) do Font.draw(line, 8, i * 8) end
+    elseif isConn then
       Font.draw("LINK: " .. fit(partner.name or "PARTNER", 8), 8, 8)
       Font.draw("AREA:", 8, 16)
       -- the round trip, right-aligned on the AREA line
@@ -352,9 +375,9 @@ function CoopMenu:draw()
         Font.draw(text, 152 - #text * 8, 16)
       end
       Font.draw(fit(CoopManager.mapLabel and CoopManager.mapLabel(partner.map) or partner.map, 18), 8, 24)
-      rows = {}
-      for i, row in ipairs(self:connectedRows(findOverworld(self.game))) do rows[i] = row.label end
     end
+    local labels = {}
+    for i, row in ipairs(rows) do labels[i] = row.label or row end
     Font.drawBox(0, 5, 20, 13)
     -- tighter rows once linked: the list is longer than the five offline ones.
     -- Nine rows at 9px fill the box exactly, from under its top border (48)
@@ -373,7 +396,11 @@ function CoopMenu:draw()
       first = self.scroll
     end
     for i = first, math.min(#rows, first + VISIBLE_ROWS - 1) do
-      Font.draw(rows[i], 24, top + (i - first) * pitch)
+      Font.draw(labels[i], 24, top + (i - first) * pitch)
+      -- a row that opens a page carries an arrow at the right edge
+      if type(rows[i]) == "table" and rows[i].sub then
+        Font.drawCode(CURSOR, 144, top + (i - first) * pitch)
+      end
     end
     Font.drawCode(CURSOR, 12, top + (self.index - first) * pitch)
     if first + VISIBLE_ROWS - 1 < #rows then
@@ -422,73 +449,6 @@ function CoopMenu:draw()
     Font.draw("HOST TO ANSWER", 8, 72)
     Font.draw("B:CANCEL", 8, 128)
 
-  elseif self.stage == "emotes" then
-    -- Header pill badge
-    local hx, hy, hw, hh = 28, 6, 104, 15
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("fill", hx + 1, hy, hw - 2, 1)
-    love.graphics.rectangle("fill", hx + 1, hy + hh - 1, hw - 2, 1)
-    love.graphics.rectangle("fill", hx, hy + 1, 1, hh - 2)
-    love.graphics.rectangle("fill", hx + hw - 1, hy + 1, 1, hh - 2)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("fill", hx + 1, hy + 1, hw - 2, hh - 2)
-    love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("SELECT EMOTE", hx + 10, hy + 4)
-
-    local items = {
-      { id = "heart", sym = "<3", name = "HEART" },
-      { id = "exclaim", sym = "!", name = "EXCLAIM" },
-      { id = "question", sym = "?", name = "QUESTION" },
-      { id = "music", sym = "#", name = "MUSIC" },
-      { id = "star", sym = "*", name = "STAR" },
-    }
-
-    local startY = 26
-    for i, it in ipairs(items) do
-      local y = startY + (i - 1) * 18
-      local bx, by, bw, bh = 18, y, 124, 16
-      local isSel = (i == self.index)
-
-      -- Outer rounded black border
-      love.graphics.setColor(0, 0, 0, 1)
-      love.graphics.rectangle("fill", bx + 1, by, bw - 2, 1)
-      love.graphics.rectangle("fill", bx + 1, by + bh - 1, bw - 2, 1)
-      love.graphics.rectangle("fill", bx, by + 1, 1, bh - 2)
-      love.graphics.rectangle("fill", bx + bw - 1, by + 1, 1, bh - 2)
-
-      -- White background fill inside
-      love.graphics.setColor(1, 1, 1, 1)
-      love.graphics.rectangle("fill", bx + 1, by + 1, bw - 2, bh - 2)
-
-      if isSel then
-        -- Selected: inner framed border + cursor
-        love.graphics.setColor(0, 0, 0, 1)
-        love.graphics.rectangle("fill", bx + 3, by + 2, bw - 6, 1)
-        love.graphics.rectangle("fill", bx + 3, by + bh - 3, bw - 6, 1)
-        love.graphics.rectangle("fill", bx + 2, by + 3, 1, bh - 6)
-        love.graphics.rectangle("fill", bx + bw - 3, by + 3, 1, bh - 6)
-
-        Font.drawCode(CURSOR, bx + 5, by + 4)
-        Font.draw(it.sym, bx + 18, by + 4)
-        Font.draw(it.name, bx + 42, by + 4)
-      else
-        love.graphics.setColor(0, 0, 0, 1)
-        Font.draw(it.sym, bx + 18, by + 4)
-        Font.draw(it.name, bx + 42, by + 4)
-      end
-    end
-
-    -- Footer pill badge
-    local fx, fy, fw, fh = 14, 122, 132, 15
-    love.graphics.setColor(0, 0, 0, 1)
-    love.graphics.rectangle("fill", fx + 1, fy, fw - 2, 1)
-    love.graphics.rectangle("fill", fx + 1, fy + fh - 1, fw - 2, 1)
-    love.graphics.rectangle("fill", fx, fy + 1, 1, fh - 2)
-    love.graphics.rectangle("fill", fx + fw - 1, fy + 1, 1, fh - 2)
-    love.graphics.setColor(1, 1, 1, 1)
-    love.graphics.rectangle("fill", fx + 1, fy + 1, fw - 2, fh - 2)
-    love.graphics.setColor(0, 0, 0, 1)
-    Font.draw("A: SEND     B: BACK", fx + 10, fy + 4)
   end
 
   if self.errorMsg and (self.stage == "main" or self.stage == "addrEntry") then

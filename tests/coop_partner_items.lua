@@ -63,12 +63,55 @@ do
   local game = newGame("ME")
   local menu = CoopMenu.new(game)
   local labels = {}
-  for _, row in ipairs(menu:connectedRows(overworld(game, "ROUTE_29"))) do labels[#labels + 1] = row.label end
+  for _, page in ipairs({ "main", "partner", "rules" }) do
+    for _, row in ipairs(menu:connectedRows(overworld(game, "ROUTE_29"), page)) do labels[#labels + 1] = row.label end
+  end
   local joined = table.concat(labels, "|")
   -- (PARTNER HEALS is the separate after-battle rule toggle, not a heal)
   T.check(not joined:find("HEAL BOTH", 1, true), "the co-op menu has no heal-both-teams row (" .. joined .. ")")
   T.check(joined:find("ITEM FOR PARTNER", 1, true) ~= nil, "the co-op menu offers ITEM FOR PARTNER")
   T.check(CoopManager.healBothParties == nil, "the heal-both-parties function is gone")
+
+  -- the menu is pages now: seven rows up top, PARTNER and RULES below them
+  local function cells(text) local n = 0 for _ in tostring(text):gmatch("[^\128-\191]") do n = n + 1 end return n end
+  local ow = overworld(game, "ROUTE_29")
+  local top = menu:connectedRows(ow)
+  T.check(#top <= 9, "the co-op menu's first page fits without scrolling (" .. #top .. " rows)")
+  local fits, described = true, true
+  for _, page in ipairs({ "main", "partner", "rules" }) do
+    for _, row in ipairs(menu:connectedRows(ow, page)) do
+      if cells(row.label) > (row.sub and 15 or 16) then fits = false end
+      if page == "rules" then
+        if not (row.info and #row.info >= 1 and #row.info <= 3) then described = false end
+        for _, line in ipairs(row.info or {}) do if cells(line) > 18 then described = false end end
+      end
+    end
+  end
+  T.check(fits, "every label fits its 16 columns (15 beside a page arrow)")
+  T.check(described, "every rule says what it does, in three lines of 18")
+  local rules = menu:connectedRows(ow, "rules")
+  T.check(cells(rules[1].label) == 16 and rules[1].label:match("O[NF]F?$") ~= nil,
+          "a rule's ON/OFF sits at the right edge (" .. rules[1].label .. ")")
+
+  -- A on PARTNER opens its page; B comes back to the PARTNER row, not the top
+  local where
+  for i, row in ipairs(top) do if row.sub == "partner" then where = i end end
+  menu.index = where
+  top[where].run()
+  T.check(menu.page == "partner" and menu.index == 1, "A on PARTNER opens the partner page")
+  local realIsConn = CoopManager.isConnected
+  CoopManager.isConnected = function() return true end
+  game.input = { wasPressed = function(_, k) return k == "b" end, isDown = function() return false end }
+  local popped = false
+  local realPop = game.stack.pop
+  game.stack.pop = function() popped = true end
+  menu:update(1 / 60)
+  T.check(menu.page == "main" and menu.index == where and not popped,
+          "B on a page goes back to the row it was opened from")
+  menu:update(1 / 60)
+  T.check(popped, "B on the first page closes the menu")
+  game.stack.pop, CoopManager.isConnected = realPop, realIsConn
+  game.input = { wasPressed = function() return false end, isDown = function() return false end }
 
   local pushed
   game.stack.push = function(_, st) pushed = st end

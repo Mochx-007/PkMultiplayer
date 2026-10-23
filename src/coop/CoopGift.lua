@@ -2,7 +2,7 @@
 -- MYSTERY GIFT OVER THE LINK.  Gold, Silver and Crystal swapped Mystery Gifts
 -- face to face over the infrared port: each game picked an item for the
 -- OTHER player, rarer ones less often, once a day per friend.  Here it runs
--- over the co-op link: START -> CO-OP -> MYSTERY GIFT asks the partner,
+-- over the co-op link: START -> CO-OP -> PARTNER -> MYSTERY GIFT asks the partner,
 -- whose game asks them; on a yes each game picks a gift for the other.
 -- One swap a day with each partner, by the session's shared clock.  Items
 -- only: the engine has no bedroom decorations to send.

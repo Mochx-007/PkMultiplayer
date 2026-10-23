@@ -6,7 +6,7 @@
 -- (a Pokemon Center or a REVIVE leaves it at 0 HP).  An area is a map, with
 -- a cave or a tower's floors counted as one.
 --
--- START -> CO-OP -> SOUL LINKS lists the pairs.  The bonds live in each
+-- START -> CO-OP -> RULES -> SOUL LINKS lists the pairs.  The bonds live in each
 -- save (save.soulLinks) and on every new link the two compare notes
 -- (coop_soul_sync), so a faint while apart is settled the next time you
 -- play together.

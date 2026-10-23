@@ -1,5 +1,5 @@
 -- src/coop/CoopWatch.lua
--- WATCHING THE PARTNER'S BATTLE.  START -> CO-OP -> WATCH <name> opens a
+-- WATCHING THE PARTNER'S BATTLE.  START -> CO-OP -> PARTNER -> WATCH <name> opens a
 -- small battle screen of the partner's fight as it happens: their foe and
 -- their Pokemon (pics, levels, HP bars, status) and the line on their text
 -- box.  It only shows -- the battle is theirs; to fight beside them, WILD

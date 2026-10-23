@@ -70,11 +70,12 @@ no incluye nada del ROM.
 | Pokégear | tu compañero encabeza la agenda (llamarlo abre el chat y le suena el Pokégear) y su marca parpadea en el mapa |
 | Reconexión | la partida recuerda el último enlace: el anfitrión vuelve a escuchar y el invitado vuelve a llamar solo (opción **AUTO RECONNECT**); fila **RECONNECT** en el menú |
 
-Menú co-op (START → CO-OP (LAN) estando conectado; se desplaza): CHAT, WARP TO
-PARTNER, ITEM FOR PARTNER, WATCH, MYSTERY GIFT, POKéDEX, SHARE DEX, TEAM UP WILD,
-LINK DAYCARE, SOUL LINK, SOUL LINKS, STORY SYNC, PARTNER HEAL, TRADE, BATTLE P1
-VS P2, EMOTE, DISCONNECT. Sin conectar: RECONNECT, HOST, JOIN, VISIT, STORY
-SYNC, EMOTE, EXIT.
+Menú co-op (START → CO-OP (LAN) estando conectado), siete filas sin scroll:
+CHAT, EMOTE, WARP TO PARTNER, **PARTNER ▶** (ITEM FOR PARTNER, WATCH, TRADE,
+BATTLE P1 VS P2, MYSTERY GIFT), POKéDEX, **RULES ▶** (STORY SYNC, TEAM UP WILD,
+SHARE DEX, LINK DAYCARE, PARTNER HEAL, SOUL LINK, SOUL LINKS; el recuadro de
+arriba explica la regla marcada) y DISCONNECT. B vuelve de una página a la
+anterior. Sin conectar: RECONNECT, HOST, JOIN, VISIT, STORY SYNC, EMOTE, EXIT.
 
 Los **ataques** caen sobre el Pokémon que hay de verdad, también en combates
 individuales: el cartucho apunta al centro de la caja de 56×56, y contra un

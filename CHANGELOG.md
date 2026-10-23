@@ -22,8 +22,22 @@ An alpha: try it, and report what the foes do.
   SCREEN against the kind of attack you carry, never both put the same
   Pokemon to sleep, and only EXPLODE when they are going down anyway.
 
+- **The co-op menu is three short pages instead of one long list.**  The
+  first page is seven rows that fit without scrolling -- CHAT, EMOTE, WARP TO
+  PARTNER, PARTNER, POKéDEX, RULES, DISCONNECT -- with what you do with your
+  partner (ITEM FOR PARTNER, WATCH, TRADE, BATTLE P1 VS P2, MYSTERY GIFT)
+  under PARTNER and the shared ON/OFF rules under RULES, where the box above
+  says what the highlighted rule does.  B steps back a page.
+
 ### Fixed
 
+- **One look for every emote bubble.**  Without the cartridge's bubbles (no
+  ROM imported in MODS), a trainer's "!" was the field's plain box, the
+  following Pokemon's find another bubble again, and the old emote screen
+  was still behind EMOTE in the offline menu.  The mod's drawn bubbles are now
+  the field's sheet when there is no ROM, so townspeople, trainers, your
+  following Pokemon and the co-op all show the same ones; importing the ROM
+  still swaps in the cartridge's.  The offline EMOTE opens the same picker.
 - **A hit aimed at a Pokemon that switched out now lands on the one that came
   in.**  The target was remembered as the Pokemon, not the spot, so the hit
   fell on the one sitting on the bench and the one that came in took nothing.
