@@ -367,6 +367,24 @@ Hooks.modules["src.pokemon.Gen2Breeding"] = function(Breeding)
   end)
 end
 
+-- WRAP / BIND / FIRE SPIN REMEMBER WHOM THEY HOLD.  The engine's victim is
+-- "the other side's lead", which in a co-op double is each copy's own
+-- Pokemon -- a foe held on one screen chose a move on the other, and every
+-- roll after that differed.  BattleState:trapperOf reads this instead.
+Hooks.modules["src.battle.MoveEffects"] = function(MoveEffects)
+  local rec = MoveEffects.full and MoveEffects.full.TRAPPING_EFFECT
+  wrap(rec, "MoveEffects.full.TRAPPING_EFFECT", "afterDamage", function(afterDamage)
+    return function(ctx, ...)
+      local was = ctx and ctx.user and ctx.user.trappingTurns
+      local a, b, c = afterDamage(ctx, ...)
+      if ctx and ctx.user and ctx.user.trappingTurns and not was then
+        ctx.user.trapTarget = ctx.target
+      end
+      return a, b, c
+    end
+  end)
+end
+
 -- WILD TOGETHER: four Pokemon out, no BALL can be aimed
 Hooks.modules["src.inventory.ItemEffects"] = function(ItemEffects)
   wrap(ItemEffects, "ItemEffects", "use", function(use)

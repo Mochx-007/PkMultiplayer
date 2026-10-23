@@ -323,6 +323,7 @@ local function resetSession()
   CoopManager.activeInviteModal = nil
   CoopManager.bigBattle = nil
   CoopManager.guestBig = nil
+  CoopManager.guestSelect = nil
   CoopManager.partnerEngagingTrainer = nil
   CoopManager.timePrompted = false
   CoopManager.pendingTimePrompt = false
@@ -1547,6 +1548,20 @@ function CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
   return p2Battle
 end
 
+-- The party picker an accepted invite opens, remembered with its invite so
+-- a cancel or a dropped link can take it down again.
+function CoopManager.openGuestSelect(game, inviteId, state)
+  CoopManager.guestSelect = { inviteId = inviteId, state = state }
+  game.stack:push(state)
+end
+
+function CoopManager.closeGuestSelect(game, inviteId)
+  local gs = CoopManager.guestSelect
+  if not gs or (inviteId and gs.inviteId and gs.inviteId ~= inviteId) then return false end
+  CoopManager.guestSelect = nil
+  return removeState(game, gs.state)
+end
+
 function CoopManager.onBattleInviteReceived(ow, msg)
   local game = getGame(ow)
   if not game or not game.stack then return end
@@ -1580,7 +1595,8 @@ function CoopManager.onBattleInviteReceived(ow, msg)
   inviteModal = CoopBattleInviteModal.new(game, pName, tName, function()
     CoopManager.activeInviteModal = nil
     local CoopBattleSelect = require("src.coop.CoopBattleSelect")
-    game.stack:push(CoopBattleSelect.new(game, eligible, function(chosenMons)
+    CoopManager.openGuestSelect(game, msg.inviteId, CoopBattleSelect.new(game, eligible, function(chosenMons)
+      CoopManager.guestSelect = nil
       if not CoopManager.isConnected() then
         CoopManager.showStatus("Partner link lost", 2.5)
         return
@@ -1592,6 +1608,7 @@ function CoopManager.onBattleInviteReceived(ow, msg)
       CoopManager.startGuestBattle(game, ow2, msg, chosenMons)
       CoopManager.showStatus("Co-op battle with " .. pName .. "!", 3)
     end, function()
+      CoopManager.guestSelect = nil
       decline("declined")
       CoopManager.showStatus("Declined co-op battle", 2)
     end))
@@ -1677,11 +1694,13 @@ end
 
 function CoopManager.onBattleCancelled(ow, msg)
   local game = getGame(ow)
+  -- the party picker opened from the invite goes first: left up, it held
+  -- the player in place after the inviter went solo or dropped, and a pick
+  -- made in it joined a battle nobody else was in
+  local picking = CoopManager.closeGuestSelect(game, msg.inviteId)
   local gb = CoopManager.guestBig
   if gb and (not msg.inviteId or gb.inviteId == msg.inviteId) then
     removeState(game, gb.modal)
-    local top = stackTop(game)
-    if top and top.isCoopBattleSelect then removeState(game, top) end
     CoopManager.guestBig = nil
     CoopManager.showStatus((CoopManager.partner.name or "Partner") .. " went solo", 2.5)
   end
@@ -1689,9 +1708,8 @@ function CoopManager.onBattleCancelled(ow, msg)
   if modal and (not msg.inviteId or modal.inviteId == msg.inviteId) then
     removeState(game, modal)
     CoopManager.activeInviteModal = nil
-    -- the party picker opened from the invite goes too
-    local top = stackTop(game)
-    if top and top.isCoopBattleSelect then removeState(game, top) end
+    CoopManager.showStatus("Partner cancelled invite", 2.5)
+  elseif picking and not gb then
     CoopManager.showStatus("Partner cancelled invite", 2.5)
   end
   local okCB, CoopBattle = pcall(require, "src.coop.CoopBattle")
@@ -1873,8 +1891,12 @@ function CoopManager.onBigBattleInvite(ow, msg)
     CoopManager.activeInviteModal = nil
     local CoopBattleSelect = require("src.coop.CoopBattleSelect")
     local CoopWaitModal = require("src.coop.CoopWaitModal")
-    game.stack:push(CoopBattleSelect.new(game, game.save.party or {}, function(chosenMons)
-      if not CoopManager.isConnected() then return end
+    CoopManager.openGuestSelect(game, msg.inviteId, CoopBattleSelect.new(game, game.save.party or {}, function(chosenMons)
+      CoopManager.guestSelect = nil
+      if not CoopManager.isConnected() then
+        CoopManager.showStatus("Partner link lost", 2.5)
+        return
+      end
       local wired = {}
       for _, m in ipairs(chosenMons) do wired[#wired + 1] = wireMon(m) end
       CoopManager.net:send({ type = "coop_bigbattle_ready", inviteId = msg.inviteId, chosenMons = wired })
@@ -1888,6 +1910,7 @@ function CoopManager.onBigBattleInvite(ow, msg)
       CoopManager.guestBig = gb
       game.stack:push(gb.modal)
     end, function()
+      CoopManager.guestSelect = nil
       decline("declined")
     end))
   end, function()
@@ -2234,7 +2257,7 @@ H.net_disconnect = function(ow, msg)
   if CoopManager.pendingBattleInvite then
     pcall(CoopManager.onBattleDeclined, ow, { inviteId = CoopManager.pendingBattleInvite.inviteId, reason = "far" })
   end
-  if CoopManager.activeInviteModal or CoopManager.guestBig then
+  if CoopManager.activeInviteModal or CoopManager.guestBig or CoopManager.guestSelect then
     pcall(CoopManager.onBattleCancelled, ow, {})
   end
   if CoopManager.bigBattle and not CoopManager.bigBattle.solo then
