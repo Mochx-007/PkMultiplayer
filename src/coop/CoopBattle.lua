@@ -139,7 +139,7 @@ function CoopBattle.encodeAction(battle, action, opts)
   end
   if action.special == "playerItem" then
     return { kind = "item", id = action.id, targetNick = action.targetNick,
-             messages = action.messages }
+             messages = action.messages, heal = action.heal }
   end
   if action.special then return { kind = "locked" } end
   local P = BattleStatePos()
@@ -191,7 +191,8 @@ function CoopBattle.decodeAction(battle, w)
     if mon then return { special = "playerSwitch", mon = mon } end
     return nil
   elseif w.kind == "item" then
-    return { special = "playerItem", id = w.id, targetNick = w.targetNick, messages = w.messages }
+    return { special = "playerItem", id = w.id, targetNick = w.targetNick, messages = w.messages,
+             heal = type(w.heal) == "table" and w.heal or nil }
   end
   return nil
 end
@@ -270,6 +271,68 @@ function CoopBattle.applyPartnerState(battle, state)
   local P = BattleStatePos()
   local b = battle.battlerAt and battle:battlerAt(P.PLAYER_RIGHT)
   if b and b.mon and b.shownHP and battle.phase ~= "messages" then b.shownHP = b.mon.hp end
+  if battle.syncShownStatus then pcall(battle.syncShownStatus, battle) end
+end
+
+-- ---------------------------------------------------------------------
+-- items used from the bag, on either player's Pokemon
+--
+-- The bag works on this copy the moment the player picks the target, and
+-- that used to be sent across at once -- landing on the partner's copy
+-- whenever it arrived, which could be in the middle of their screen still
+-- playing out the turn before.  It now rides with this turn's action and
+-- both copies write it in as the turn opens (executeTurn).
+--
+-- What it carries is the Pokemon AFTER the item, merged the one way an item
+-- can move it -- HP up, a status or confusion gone, PP up -- so a heal from
+-- each player on the same Pokemon in the same turn ends the same on both.
+-- `side` is the sender's: "own" (their three) or "ally" (the partner's).
+-- ---------------------------------------------------------------------
+
+local function battlerOf(battle, mon)
+  for p = 0, 3 do
+    local b = battle.battlerAt and battle:battlerAt(p)
+    if b and b.mon == mon then return b end
+  end
+  return nil
+end
+
+function CoopBattle.itemHeal(battle, mon)
+  if type(mon) ~= "table" then return nil end
+  local side, index = "own", indexOf(battle.coopChosenMons, mon)
+  if not index then
+    side, index = "ally", indexOf(battle.ally and battle.ally.party, mon)
+  end
+  if not index then return nil end
+  local pp = {}
+  for j, mv in ipairs(mon.moves or {}) do pp[j] = mv.pp end
+  local b = battlerOf(battle, mon)
+  return { side = side, index = index, species = mon.species, hp = mon.hp,
+           status = mon.status or false, pp = pp,
+           confused = b and (b.confusedTurns ~= nil) or nil }
+end
+
+-- `mine`: the Pokemon is this copy's own (one of coopChosenMons)
+function CoopBattle.applyItemHeal(battle, heal, mine)
+  if type(heal) ~= "table" then return end
+  local list = mine and battle.coopChosenMons or (battle.ally and battle.ally.party)
+  local mon = type(list) == "table" and list[tonumber(heal.index) or 0]
+  if type(mon) ~= "table" or (heal.species and mon.species ~= heal.species) then return end
+  local hp = tonumber(heal.hp)
+  if hp and hp > (tonumber(mon.hp) or 0) then mon.hp = hp end
+  if heal.status == false then mon.status = nil end
+  if type(heal.pp) == "table" then
+    for j, v in ipairs(heal.pp) do
+      local mv = mon.moves and mon.moves[j]
+      if mv and tonumber(v) and v > (mv.pp or 0) then mv.pp = v end
+    end
+  end
+  local b = battlerOf(battle, mon)
+  if b then
+    b.status = mon.status
+    if heal.confused == false then b.confusedTurns = nil end
+    if b.shownHP then b.shownHP = mon.hp end
+  end
   if battle.syncShownStatus then pcall(battle.syncShownStatus, battle) end
 end
 
@@ -511,6 +574,14 @@ function CoopBattle.executeTurn(battle)
     CoopBattle.applyPartnerState(battle, partnerState)
   end
   battle.coopPartnerAction = (not c.partnerLost) and CoopBattle.decodeAction(battle, wire) or nil
+  -- this turn's bag heals, host's first on both copies.  Ours on the
+  -- partner's Pokemon goes in again after their state was written over it;
+  -- theirs is "own" = our ally's, or "ally" = ours.
+  local mineH = type(localAction) == "table" and localAction.heal or nil
+  local theirsH = battle.coopPartnerAction and battle.coopPartnerAction.heal or nil
+  local function ours() if mineH and mineH.side == "ally" then CoopBattle.applyItemHeal(battle, mineH, false) end end
+  local function theirs() if theirsH then CoopBattle.applyItemHeal(battle, theirsH, theirsH.side == "ally") end end
+  if battle.isCoopGuest then theirs() ours() else ours() theirs() end
   reseed(battle, turn)
   CoopLog.battle("TURN", string.format("resolve turn %d (partner %s)", turn,
                  c.partnerLost and "AI" or tostring(wire and wire.kind)))
@@ -863,6 +934,8 @@ end
 
 function CoopBattle.onPartnerHealedMon(msg)
   if not msg or not CoopBattle.currentBattle then return end
+  -- it rides with their action this turn (applyItemHeal)
+  if msg.deferred and CoopBattle.currentBattle.coop then return end
   local battle = CoopBattle.currentBattle
   local function matches(mon)
     return mon and (mon.nickname == msg.targetNick or (not mon.nickname and mon.species == msg.species)

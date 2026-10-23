@@ -281,4 +281,70 @@ end
 T.check(totalPicks > 0, "players actually picked replacements (" .. totalPicks .. ")")
 CoopBattle.AUTO_REPLACE = true
 
+
+-- ---------------------------------------------------------------------
+-- THE BAG REACHES THE PARTNER'S POKEMON.  The host uses a POTION on the
+-- guest's Pokemon; the heal rides with the host's action and both copies
+-- write it in as the turn opens -- also when the guest's own action, sent
+-- before it heard of the potion, still carries the old HP.
+-- ---------------------------------------------------------------------
+
+do
+  local hostGame = newGame("HOST", { "FIXMON_A", "FIXMON_B" }, 8)
+  local guestGame = newGame("GUEST", { "FIXMON_C", "FIXMON_B" }, 8)
+  local hurt = guestGame.save.party[1]
+  hurt.hp = 3
+  local bus = { host = {}, guest = {} }
+  local sender = "host"
+  CoopManager.connected = true
+  CoopManager.net = { send = function(_, m) table.insert(bus[sender == "host" and "guest" or "host"], onWire(m)) end,
+                      isLinked = function() return true end, flush = function() end }
+  CoopManager.isConnected = function() return true end
+  local hostWire, guestWire = {}, {}
+  for i, m in ipairs(hostGame.save.party) do hostWire[i] = CoopManager.wireMon(m) end
+  for i, m in ipairs(guestGame.save.party) do guestWire[i] = CoopManager.wireMon(m) end
+  local hb = BattleState.newTrainer(hostGame, "OPP_FIX_YOUNGSTER", 1)
+  hostGame.stack:push(hb)
+  CoopBattle.initBattle(hb, hostGame.save.party, guestWire, { name = "GUEST" }, 4242, "BAG")
+  local gb = BattleState.newTrainer(guestGame, "OPP_FIX_YOUNGSTER", 1)
+  gb.isCoopGuest = true
+  guestGame.stack:push(gb)
+  CoopBattle.initBattle(gb, guestGame.save.party, hostWire, { name = "HOST" }, 4242, "BAG")
+  drain(hb); drain(gb)
+
+  local seen = {}
+  local realApply = CoopBattle.applyItemHeal
+  CoopBattle.applyItemHeal = function(battle, heal, mine)
+    realApply(battle, heal, mine)
+    local list = mine and battle.coopChosenMons or battle.ally.party
+    seen[battle == hb and "host" or "guest"] = list[heal.index].hp
+  end
+  -- the guest chooses first: its state still says 3 HP
+  sender = "guest"; CoopBattle.currentBattle = gb
+  CoopBattle.onLocalActionSelected(gb, pickMove(gb, 1))
+  -- the host's bag: a POTION on the guest's Pokemon (+20)
+  sender = "host"; CoopBattle.currentBattle = hb
+  local copy = hb.ally.party[1]
+  copy.hp = math.min(copy.stats.hp, copy.hp + 20)
+  local heal = CoopBattle.itemHeal(hb, copy)
+  T.check(heal and heal.side == "ally" and heal.index == 1, "the host's heal names the guest's first Pokemon")
+  CoopBattle.onLocalActionSelected(hb, { special = "playerItem", id = "POTION", target = copy,
+                                         targetNick = "X", messages = { "Used POTION!" }, heal = heal })
+  deliver = function(to)
+    local q = bus[to]
+    bus[to] = {}
+    CoopBattle.currentBattle = (to == "host") and hb or gb
+    for _, m in ipairs(q) do
+      if m.type == "coop_battle_action" then CoopBattle.onPartnerAction(m) end
+    end
+  end
+  deliver("guest"); deliver("host")
+  drain(hb); drain(gb)
+  CoopBattle.applyItemHeal = realApply
+  T.eq(seen.host, 23, "host's copy: the guest's Pokemon at 23 HP as the turn opens")
+  T.eq(seen.guest, 23, "guest's copy: their own Pokemon at 23 HP as the turn opens")
+  T.check(hurt.hp > 3, "the guest's real Pokemon (their save) was healed")
+  T.eq(hpOf(hb, P.PLAYER_RIGHT), hpOf(gb, P.PLAYER_LEFT), "both copies agree after the turn")
+end
+
 T.finish("co-op doubles lockstep")
