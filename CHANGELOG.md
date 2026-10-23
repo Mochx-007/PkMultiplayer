@@ -3,6 +3,33 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha
+
+**Both players need 1.4.1-alpha** (link protocol 10: a 1.4.0 partner would
+resolve the same co-op double differently, so the two are not allowed to pair).
+An alpha: try it, and report what the foes do.
+
+### Changed
+
+- **The foes of a co-op double think as a team.** They scout your Pokemon
+  first -- what each of yours can do to each of theirs, who can knock out
+  whom, who moves first -- and the first to choose plans the whole turn with
+  its partner: they split up, or gang up on a Pokemon neither could knock out
+  alone.  The dangerous Pokemon is the one they want gone, not just the frail
+  one, and a knockout is worth more when it lands before the target moves.
+  They PROTECT when one of you is about to knock them out first, heal only
+  while it still helps, set up only when it is safe, raise REFLECT or LIGHT
+  SCREEN against the kind of attack you carry, never both put the same
+  Pokemon to sleep, and only EXPLODE when they are going down anyway.
+
+### Fixed
+
+- **A hit aimed at a Pokemon that switched out now lands on the one that came
+  in.**  The target was remembered as the Pokemon, not the spot, so the hit
+  fell on the one sitting on the bench and the one that came in took nothing.
+  Both ways: a trainer's switch no longer dodges your attack either, and a
+  THRASH or OUTRAGE follows the spot too.
+
 ## 1.4.0
 
 **Both players need 1.4.0** (link protocol 9: a 1.3 partner would not

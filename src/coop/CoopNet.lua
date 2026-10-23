@@ -32,7 +32,9 @@ CoopNet.DEFAULT_PORT = 7777
 -- whole state diff -- a v2 copy would resolve the same turn differently
 -- 7: story events count for the partner on any map and wait out a dropped
 -- link -- a v6 copy would drop every event from another map
-CoopNet.PROTOCOL = 9
+-- 10: the doubles AI plans the foes' turn together and a hit follows the
+-- slot after a switch -- a v9 copy would resolve the same turn differently
+CoopNet.PROTOCOL = 10
 CoopNet.CHANNELS = 2
 CoopNet.CH_RELIABLE = 0
 CoopNet.CH_FAST = 1
