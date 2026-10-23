@@ -3,6 +3,17 @@
 Format: [keep a changelog](https://keepachangelog.com/en/1.1.0/).
 Version headings match `manifest.json`'s `version`.
 
+## 1.4.1-alpha.4
+
+Plays with 1.4.1-alpha.3 (same link protocol, 12): only how your partner
+looks changed.
+
+### Added
+
+- **Gen 2: your partner wears their version's colour too** -- GOLD in gold,
+  SILVER in silver, CRYSTAL in crystal blue (visitors as well).  A version
+  the mod does not know keeps the old blue.
+
 ## 1.4.1-alpha.3
 
 **Both players need 1.4.1-alpha.3** (link protocol 12: an alpha.2 partner
